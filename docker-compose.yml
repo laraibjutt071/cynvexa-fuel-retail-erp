@@ -1,0 +1,53 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: cynvexa
+      POSTGRES_PASSWORD: cynvexa
+      POSTGRES_DB: cynvexa
+    ports:
+      - "5432:5432"
+    volumes:
+      - cynvexa_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cynvexa -d cynvexa"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://cynvexa:cynvexa@db:5432/cynvexa
+    ports:
+      - "8000:8000"
+    volumes:
+      # Dev-only durability for the local evidence-upload backend (see
+      # app/core/storage.py) so files survive a container restart. Still
+      # not safe with more than one backend instance - swap for object
+      # storage before any real deployment.
+      - cynvexa_uploads:/app/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # Baked into the client bundle at build time - see Dockerfile comment.
+        NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+
+volumes:
+  cynvexa_db_data:
+  cynvexa_uploads:

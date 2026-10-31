@@ -1,0 +1,32 @@
+# Environment / secrets
+.env
+*.env
+!.env.example
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+.pytest_cache/
+
+# Node
+node_modules/
+.next/
+out/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Local evidence uploads (dev-only storage backend, never durable/shared - see
+# app/core/storage.py)
+backend/uploads/
+.neon
+.env.local
+.tools/
