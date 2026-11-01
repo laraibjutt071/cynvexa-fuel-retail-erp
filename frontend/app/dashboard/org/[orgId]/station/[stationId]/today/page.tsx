@@ -8,6 +8,7 @@ import {
   Fuel,
   Receipt,
   ShoppingCart,
+  Truck,
   Wallet,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
@@ -16,9 +17,22 @@ import { useAuth } from "@/lib/auth-context";
 import { useLanguage } from "@/lib/i18n/context";
 import { stationDateIso } from "@/lib/date";
 import { Card } from "@/components/Card";
+import { TankGauge } from "@/components/TankGauge";
 import { FuelStockChart } from "@/components/charts/FuelStockChart";
 import { LitresByGradeChart } from "@/components/charts/LitresByGradeChart";
-import type { CreditCustomerBalance, DailyFuelSalesDay, PendingApprovalsReport, ShiftReconciliationReportRow, Tank } from "@/lib/types";
+import { PaymentMethodBreakdownChart, type PaymentMethodSlice } from "@/components/charts/PaymentMethodBreakdownChart";
+import type {
+  CreditCustomerBalance,
+  DailyFuelSalesDay,
+  FuelGrade,
+  FuelPrice,
+  PaymentMethod,
+  PendingApprovalsReport,
+  ShiftReconciliationReportRow,
+  ShiftTender,
+  Tank,
+  TankerReceipt,
+} from "@/lib/types";
 
 export default function TodayOverviewPage() {
   const { orgId, stationId } = useParams<{ orgId: string; stationId: string }>();
@@ -44,24 +58,53 @@ export default function TodayOverviewPage() {
   const [pending, setPending] = useState<PendingApprovalsReport | null>(null);
   const [tanks, setTanks] = useState<Tank[] | null>(null);
   const [credit, setCredit] = useState<CreditCustomerBalance[] | null>(null);
+  const [fuelGrades, setFuelGrades] = useState<FuelGrade[]>([]);
+  const [fuelPrices, setFuelPrices] = useState<FuelPrice[]>([]);
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
+  const [todaysTenders, setTodaysTenders] = useState<ShiftTender[]>([]);
+  const [lastReceipt, setLastReceipt] = useState<TankerReceipt | null>(null);
 
   const load = useCallback(async () => {
     const stationBase = `/organizations/${orgId}/stations/${stationId}`;
-    const [salesResp, reconResp, pendingResp, tanksResp, creditResp] = await Promise.all([
-      authFetch(`${stationBase}/reports/daily-fuel-sales?date_from=${date}&date_to=${date}`),
-      authFetch(`${stationBase}/reports/shift-reconciliation?date_from=${date}&date_to=${date}`),
-      authFetch(`/organizations/${orgId}/reports/pending-approvals`),
-      authFetch(`${stationBase}/tanks`),
-      authFetch(`/organizations/${orgId}/credit-customers/balances`),
-    ]);
+    const [salesResp, reconResp, pendingResp, tanksResp, creditResp, gradesResp, pricesResp, methodsResp, receiptsResp] =
+      await Promise.all([
+        authFetch(`${stationBase}/reports/daily-fuel-sales?date_from=${date}&date_to=${date}`),
+        authFetch(`${stationBase}/reports/shift-reconciliation?date_from=${date}&date_to=${date}`),
+        authFetch(`/organizations/${orgId}/reports/pending-approvals`),
+        authFetch(`${stationBase}/tanks`),
+        authFetch(`/organizations/${orgId}/credit-customers/balances`),
+        authFetch(`/organizations/${orgId}/fuel-grades`),
+        authFetch(`${stationBase}/fuel-prices`),
+        authFetch(`/organizations/${orgId}/payment-methods`),
+        authFetch(`${stationBase}/tanker-receipts`),
+      ]);
     if (salesResp.ok) {
       const days: DailyFuelSalesDay[] = await salesResp.json();
       setSales(days[0] ?? null);
     }
-    if (reconResp.ok) setRecon(await reconResp.json());
+    let reconRows: ShiftReconciliationReportRow[] = [];
+    if (reconResp.ok) {
+      reconRows = await reconResp.json();
+      setRecon(reconRows);
+    }
     if (pendingResp.ok) setPending(await pendingResp.json());
     if (tanksResp.ok) setTanks(await tanksResp.json());
     if (creditResp.ok) setCredit(await creditResp.json());
+    if (gradesResp.ok) setFuelGrades(await gradesResp.json());
+    if (pricesResp.ok) setFuelPrices(await pricesResp.json());
+    if (methodsResp.ok) setPaymentMethods(await methodsResp.json());
+    if (receiptsResp.ok) {
+      const receipts: TankerReceipt[] = await receiptsResp.json();
+      setLastReceipt(receipts[0] ?? null);
+    }
+
+    // Today's shift(s) tenders, for the payment-method breakdown - the
+    // reconciliation report rows already give us which shift(s) count as
+    // "today," so this reuses that instead of guessing a shift id.
+    const tenderLists = await Promise.all(
+      reconRows.map((r) => authFetch(`${stationBase}/shifts/${r.shift_id}/tenders`).then((r2) => (r2.ok ? r2.json() : [])))
+    );
+    setTodaysTenders(tenderLists.flat());
   }, [authFetch, orgId, stationId, date]);
 
   useEffect(() => {
@@ -84,6 +127,30 @@ export default function TodayOverviewPage() {
   const pendingCount = pending
     ? pending.tanker_receipts_awaiting_approval + pending.shifts_awaiting_approval + pending.pending_expenses + pending.unapproved_supplier_payments
     : 0;
+
+  // fuelPrices is already ordered by effective_from desc (server-side), so
+  // the first row per grade is the current one - never averaged or guessed.
+  const currentPriceByGrade = new Map<string, FuelPrice>();
+  for (const price of fuelPrices) {
+    if (!currentPriceByGrade.has(price.fuel_grade_id)) currentPriceByGrade.set(price.fuel_grade_id, price);
+  }
+  const gradeNameById = new Map(fuelGrades.map((g) => [g.id, g.name]));
+  const litresSoldByGrade = new Map((sales?.grades ?? []).map((g) => [g.fuel_grade_id, Number(g.litres_sold)]));
+
+  const activeTenders = todaysTenders.filter((t) => !t.reversed_at);
+  const methodById = new Map(paymentMethods.map((m) => [m.id, m]));
+  const categoryTotals = new Map<string, number>();
+  for (const tender of activeTenders) {
+    const category = methodById.get(tender.payment_method_id)?.category ?? "cash";
+    categoryTotals.set(category, (categoryTotals.get(category) ?? 0) + Number(tender.amount));
+  }
+  const categoryLabel: Record<string, string> = { cash: "Cash", card: "Card", digital: "Digital / Bank", credit: "Credit" };
+  const paymentBreakdown: PaymentMethodSlice[] = Array.from(categoryTotals, ([category, amount]) => ({
+    label: categoryLabel[category] ?? category,
+    amount,
+  }));
+  const transactionsCount = activeTenders.length;
+  const avgTransaction = transactionsCount > 0 ? totalCollected / transactionsCount : 0;
 
   return (
     <div className="mx-auto max-w-6xl space-y-6 px-4 py-6 sm:px-6 sm:py-8">
@@ -137,29 +204,89 @@ export default function TodayOverviewPage() {
         />
         <SummaryCard icon={CreditCard} label={t("today.outstandingCredit")} value={outstandingCredit.toFixed(2)} />
         <SummaryCard icon={CheckSquare} label={t("today.itemsAwaitingApproval")} value={String(pendingCount)} tone={pendingCount > 0 ? "warning" : "neutral"} />
+        <SummaryCard icon={Receipt} label={t("today.transactions")} value={String(transactionsCount)} />
+        <SummaryCard icon={Wallet} label={t("today.avgTransaction")} value={avgTransaction.toFixed(2)} />
       </div>
 
-      {tanks && tanks.length > 0 && <FuelStockChart tanks={tanks} title={t("today.fuelStockRemaining")} />}
-      {sales && sales.grades.length > 0 && <LitresByGradeChart grades={sales.grades} title={t("today.fuelSoldByProduct")} />}
-
-      <Card title={t("today.fuelStockRemaining")} description={t("today.fuelStockDescription")}>
+      <Card title={t("today.tankLevels")} description={t("today.tankLevelsDescription")}>
         {!tanks ? (
           <p className="text-sm text-ink-soft">{t("common.loading")}</p>
         ) : tanks.length === 0 ? (
           <p className="text-sm text-ink-soft">{t("today.noTanks")}</p>
         ) : (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-            {tanks.map((tank) => (
-              <div key={tank.id} className="card-glow rounded-lg bg-surface p-3">
-                <p className="text-lg font-semibold text-ink">{tank.book_stock} L</p>
-                <p className="mt-0.5 text-xs text-ink-soft">
-                  Tank {tank.code} · {tank.safe_capacity_available} L {t("today.available")}
-                </p>
-              </div>
-            ))}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {tanks.map((tank) => {
+              const gradeLitresSold = litresSoldByGrade.get(tank.fuel_grade_id) ?? 0;
+              const stock = Number(tank.book_stock);
+              const daysRemaining = gradeLitresSold > 0 ? stock / gradeLitresSold : null;
+              return (
+                <TankGauge
+                  key={tank.id}
+                  code={tank.code}
+                  gradeName={gradeNameById.get(tank.fuel_grade_id) ?? "—"}
+                  stockLitres={stock}
+                  capacityLitres={Number(tank.capacity)}
+                  daysRemaining={daysRemaining}
+                  daysRemainingLabel={t("today.daysRemaining")}
+                />
+              );
+            })}
           </div>
         )}
       </Card>
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        {tanks && tanks.length > 0 && <FuelStockChart tanks={tanks} title={t("today.fuelStockRemaining")} />}
+        {paymentBreakdown.length > 0 && (
+          <PaymentMethodBreakdownChart data={paymentBreakdown} title={t("today.paymentBreakdown")} />
+        )}
+      </div>
+      {sales && sales.grades.length > 0 && <LitresByGradeChart grades={sales.grades} title={t("today.fuelSoldByProduct")} />}
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <Card title={t("today.currentPrices")} description={t("today.currentPricesDescription")}>
+          {fuelGrades.length === 0 ? (
+            <p className="text-sm text-ink-soft">{t("common.loading")}</p>
+          ) : (
+            <ul className="space-y-2">
+              {fuelGrades.map((grade) => {
+                const price = currentPriceByGrade.get(grade.id);
+                return (
+                  <li key={grade.id} className="flex items-center justify-between rounded-lg border border-border px-3 py-2">
+                    <span className="text-sm text-ink">{grade.name}</span>
+                    {price ? (
+                      <span className="text-sm font-semibold text-ink">
+                        {price.price_per_litre} <span className="font-normal text-ink-faint">{t("today.perLitre")}</span>
+                      </span>
+                    ) : (
+                      <span className="text-sm text-ink-faint">—</span>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </Card>
+
+        <Card title={t("today.lastDelivery")}>
+          {!lastReceipt ? (
+            <p className="text-sm text-ink-soft">{t("today.noDeliveriesYet")}</p>
+          ) : (
+            <div className="flex items-start gap-3">
+              <Truck className="mt-0.5 h-5 w-5 flex-shrink-0 text-ink-faint" aria-hidden />
+              <div>
+                <p className="text-sm text-ink">
+                  {gradeNameById.get(lastReceipt.fuel_grade_id) ?? "—"} ·{" "}
+                  {lastReceipt.accepted_quantity ?? lastReceipt.dispatched_quantity ?? lastReceipt.invoice_quantity ?? "—"} L
+                </p>
+                <p className="mt-0.5 text-xs text-ink-faint">
+                  {new Date(lastReceipt.created_at).toLocaleString()} · {lastReceipt.status.replace(/_/g, " ")}
+                </p>
+              </div>
+            </div>
+          )}
+        </Card>
+      </div>
 
       {sales && sales.grades.length > 0 && (
         <Card title={t("today.fuelSoldByProduct")}>

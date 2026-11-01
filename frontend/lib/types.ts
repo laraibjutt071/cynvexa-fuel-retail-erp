@@ -267,6 +267,24 @@ export interface Tank {
   safe_capacity_available: string;
 }
 
+export interface FuelGrade {
+  id: string;
+  organization_id: string;
+  name: string;
+  code: string;
+  is_active: boolean;
+}
+
+export interface FuelPrice {
+  id: string;
+  station_id: string;
+  fuel_grade_id: string;
+  price_per_litre: string;
+  effective_from: string;
+  created_by_user_id: string | null;
+  created_at: string;
+}
+
 export interface PaymentMethod {
   id: string;
   organization_id: string;
