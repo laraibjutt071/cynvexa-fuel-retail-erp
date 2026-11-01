@@ -15,6 +15,7 @@ import {
   Menu,
   Receipt,
   Settings,
+  ShieldCheck,
   ShoppingCart,
   Truck,
   Wallet,
@@ -210,6 +211,15 @@ export function AppShell({ children }: { children: ReactNode }) {
             {language === "en" ? "EN" : "UR"}
           </span>
         </button>
+        {isSuperuser && (
+          <Link
+            href="/dashboard/platform"
+            className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-ink-soft hover:bg-surface-elevated hover:text-ink"
+          >
+            <ShieldCheck className="h-4.5 w-4.5" aria-hidden />
+            Platform Admin
+          </Link>
+        )}
         {can(["user:read"]) && (
           <Link
             href={`/dashboard/org/${orgId}/settings`}

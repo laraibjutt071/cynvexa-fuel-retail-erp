@@ -22,6 +22,50 @@ export interface Organization {
   updated_at: string;
 }
 
+export interface Plan {
+  id: string;
+  code: string;
+  name: string;
+  description: string | null;
+  price_monthly: string;
+  price_annual: string;
+  max_stations: number | null;
+  max_users: number | null;
+  is_active: boolean;
+}
+
+export type SubscriptionStatus = "trial" | "active" | "past_due" | "canceled" | "expired";
+export type BillingCycle = "monthly" | "annual";
+
+export interface Subscription {
+  id: string;
+  organization_id: string;
+  plan_id: string;
+  plan: Plan;
+  status: SubscriptionStatus;
+  billing_cycle: BillingCycle;
+  trial_ends_at: string | null;
+  current_period_start: string;
+  current_period_end: string;
+  canceled_at: string | null;
+}
+
+export type SubscriptionPaymentStatus = "verified" | "failed";
+
+export interface SubscriptionPayment {
+  id: string;
+  subscription_id: string;
+  amount: string;
+  method: string;
+  reference: string | null;
+  status: SubscriptionPaymentStatus;
+  period_start: string;
+  period_end: string;
+  notes: string | null;
+  recorded_by_user_id: string;
+  created_at: string;
+}
+
 export interface Session {
   id: string;
   created_at: string;

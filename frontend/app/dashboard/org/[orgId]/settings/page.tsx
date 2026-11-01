@@ -8,7 +8,8 @@ import { useToast } from "@/components/ui/Toast";
 import { Card } from "@/components/Card";
 import { Button } from "@/components/ui/Button";
 import { Field, Select, TextInput } from "@/components/ui/Field";
-import type { OrgUser, Role, RoleAssignment, Session, Station } from "@/lib/types";
+import { Badge, type BadgeTone } from "@/components/ui/Badge";
+import type { OrgUser, Role, RoleAssignment, Session, Station, Subscription, SubscriptionPayment, SubscriptionStatus } from "@/lib/types";
 
 type AuthFetch = ReturnType<typeof useAuth>["authFetch"];
 
@@ -38,6 +39,7 @@ export default function SettingsPage() {
 
       <div className="mx-auto max-w-5xl space-y-6 px-6 py-8">
         <AccountCard authFetch={authFetch} language={language} setLanguage={setLanguage} t={t} />
+        {can("subscription:read") && <BillingCard orgId={orgId} authFetch={authFetch} />}
         {can("user:read") && (
           <OrgUsersCard
             orgId={orgId}
@@ -404,5 +406,85 @@ function OrgUsersCard({
         <p className="text-sm text-ink-soft">{t("settings.selectUser")}</p>
       )}
     </div>
+  );
+}
+
+const SUB_STATUS_TONE: Record<SubscriptionStatus, BadgeTone> = {
+  trial: "warning",
+  active: "success",
+  past_due: "caution",
+  canceled: "neutral",
+  expired: "danger",
+};
+
+function BillingCard({ orgId, authFetch }: { orgId: string; authFetch: AuthFetch }) {
+  const [subscription, setSubscription] = useState<Subscription | "none" | null>(null);
+  const [payments, setPayments] = useState<SubscriptionPayment[]>([]);
+
+  useEffect(() => {
+    (async () => {
+      const resp = await authFetch(`/organizations/${orgId}/subscription`);
+      if (!resp.ok) {
+        setSubscription("none");
+        return;
+      }
+      setSubscription(await resp.json());
+      const payResp = await authFetch(`/organizations/${orgId}/subscription/payments`);
+      if (payResp.ok) setPayments(await payResp.json());
+    })();
+  }, [authFetch, orgId]);
+
+  return (
+    <Card title="Billing & subscription">
+      {subscription === null ? (
+        <p className="text-sm text-ink-soft">Loading…</p>
+      ) : subscription === "none" ? (
+        <p className="text-sm text-ink-soft">No subscription set up yet - contact CYNVEXA to get started.</p>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <div>
+              <p className="text-xs text-ink-faint">Plan</p>
+              <p className="text-sm font-semibold text-ink">{subscription.plan.name}</p>
+            </div>
+            <div>
+              <p className="text-xs text-ink-faint">Status</p>
+              <Badge tone={SUB_STATUS_TONE[subscription.status]}>{subscription.status.replace(/_/g, " ")}</Badge>
+            </div>
+            <div>
+              <p className="text-xs text-ink-faint">Billing cycle</p>
+              <p className="text-sm text-ink">{subscription.billing_cycle}</p>
+            </div>
+            <div>
+              <p className="text-xs text-ink-faint">Current period ends</p>
+              <p className="text-sm text-ink">{new Date(subscription.current_period_end).toLocaleDateString()}</p>
+            </div>
+          </div>
+
+          {payments.length > 0 && (
+            <table className="mt-4 w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-left text-ink-faint">
+                  <th className="py-2 pr-2">Date</th>
+                  <th className="py-2 pr-2">Amount</th>
+                  <th className="py-2 pr-2">Method</th>
+                  <th className="py-2 pr-2">Reference</th>
+                </tr>
+              </thead>
+              <tbody>
+                {payments.map((p) => (
+                  <tr key={p.id} className="border-b border-border/60">
+                    <td className="py-2 pr-2 text-ink">{new Date(p.created_at).toLocaleDateString()}</td>
+                    <td className="py-2 pr-2 text-ink">{p.amount}</td>
+                    <td className="py-2 pr-2 text-ink-soft">{p.method.replace(/_/g, " ")}</td>
+                    <td className="py-2 pr-2 text-ink-soft">{p.reference ?? "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </>
+      )}
+    </Card>
   );
 }

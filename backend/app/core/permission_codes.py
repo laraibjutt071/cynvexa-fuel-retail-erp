@@ -120,6 +120,13 @@ INVENTORY_MOVEMENT_ADJUST = "inventory_movement:adjust"
 # dashboard-visibility gate, not a new data-access grant.
 REPORT_READ = "report:read"
 
+# SaaS subscription/billing. Deliberately a single org-scoped READ permission,
+# not a write one: an organization can see its own plan, status and payment
+# history, but can never change its own subscription - only a platform
+# administrator can (app/api/platform.py, gated by require_superuser, not
+# role-based, same pattern as ORGANIZATION_CREATE above).
+SUBSCRIPTION_READ = "subscription:read"
+
 ALL_PERMISSIONS: dict[str, str] = {
     ORGANIZATION_READ: "View organization profile and settings.",
     ORGANIZATION_UPDATE: "Edit organization profile and settings.",
@@ -176,6 +183,7 @@ ALL_PERMISSIONS: dict[str, str] = {
     INVENTORY_MOVEMENT_RECORD: "Record an inventory receipt, issue or sale.",
     INVENTORY_MOVEMENT_ADJUST: "Record an inventory stock adjustment.",
     REPORT_READ: "View owner-dashboard reports and export them.",
+    SUBSCRIPTION_READ: "View the organization's own subscription plan, status and payment history.",
 }
 
 # Seed roles. Per docs/ASSUMPTIONS.md #11 and #7, this is a starting point for the
@@ -279,6 +287,7 @@ SEED_ROLES: dict[str, list[str]] = {
         INVENTORY_ITEM_READ,
         INVENTORY_MOVEMENT_READ,
         REPORT_READ,
+        SUBSCRIPTION_READ,
     ],
     "Storekeeper / Technician": [
         STATION_READ,
