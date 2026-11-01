@@ -35,6 +35,24 @@ async def test_non_superuser_cannot_manage_plans(client: AsyncClient, owner_user
     assert resp.status_code == 403
 
 
+async def test_public_plans_endpoint_needs_no_auth_and_hides_inactive_plans(client: AsyncClient, superuser):
+    token = await login(client, "platform-admin@cynvexa-platform-dev.com")
+    active_id = await _create_plan(client, token, code="public-active")
+    inactive_resp = await client.post(
+        "/platform/plans",
+        json={"code": "public-inactive", "name": "Hidden", "price_monthly": "1", "price_annual": "1"},
+        headers=auth_headers(token),
+    )
+    inactive_id = inactive_resp.json()["id"]
+    await client.patch(f"/platform/plans/{inactive_id}", json={"is_active": False}, headers=auth_headers(token))
+
+    public_resp = await client.get("/plans")
+    assert public_resp.status_code == 200
+    ids = [p["id"] for p in public_resp.json()]
+    assert active_id in ids
+    assert inactive_id not in ids
+
+
 async def test_superuser_can_create_and_list_plans(client: AsyncClient, superuser):
     token = await login(client, "platform-admin@cynvexa-platform-dev.com")
     plan_id = await _create_plan(client, token)

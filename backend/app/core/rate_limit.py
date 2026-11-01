@@ -54,3 +54,10 @@ class SlidingWindowLimiter:
 # lock out a real user who mistypes a password a few times, tight enough to
 # meaningfully slow a credential-stuffing script.
 login_limiter = SlidingWindowLimiter(max_attempts=10, window_seconds=300)
+
+# Self-service registration creates a real Organization + Subscription per
+# call, a heavier action than a login attempt - 5 per hour per client IP is
+# enough for a real small business signing up (including a mistyped retry)
+# while meaningfully slowing automated junk-account creation. Same
+# single-instance caveat as login_limiter above.
+registration_limiter = SlidingWindowLimiter(max_attempts=5, window_seconds=3600)

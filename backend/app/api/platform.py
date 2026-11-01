@@ -33,8 +33,21 @@ from app.schemas.subscription import (
 
 router = APIRouter(prefix="/platform", tags=["platform"])
 
+# No auth at all - a prospective customer looking at the sign-up/pricing
+# page hasn't got an account yet. Deliberately a separate router/path from
+# /platform/plans above (which is the full CRUD, superuser-only view) and
+# deliberately read-only: only active plans, and only the fields a pricing
+# page needs.
+public_router = APIRouter(tags=["public"])
 
-# ---- Plans -----------------------------------------------------------------
+
+@public_router.get("/plans", response_model=list[PlanRead])
+async def list_public_plans(db: AsyncSession = Depends(get_db)) -> list[Plan]:
+    result = await db.execute(select(Plan).where(Plan.is_active.is_(True)).order_by(Plan.price_monthly))
+    return list(result.scalars().all())
+
+
+# ---- Plans (platform-admin, full CRUD) --------------------------------------
 
 
 @router.post("/plans", response_model=PlanRead, status_code=201)

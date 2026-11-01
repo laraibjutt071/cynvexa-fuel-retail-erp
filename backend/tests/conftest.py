@@ -53,17 +53,19 @@ async def db() -> AsyncGenerator[AsyncSession, None]:
 
 @pytest.fixture(autouse=True)
 def _reset_login_limiter():
-    """The login rate limiter (app/core/rate_limit.py) is a module-level
-    singleton shared by the whole test process - without this, a handful
-    of deliberate failed-login tests sharing the same test-client "IP"
-    could accumulate across the suite and start tripping 429 on later,
-    unrelated tests. Same isolation principle as _clean_tables, for
-    in-memory state instead of DB state."""
-    from app.core.rate_limit import login_limiter
+    """The login and registration rate limiters (app/core/rate_limit.py) are
+    module-level singletons shared by the whole test process - without
+    this, a handful of deliberate failed-login/registration tests sharing
+    the same test-client "IP" could accumulate across the suite and start
+    tripping 429 on later, unrelated tests. Same isolation principle as
+    _clean_tables, for in-memory state instead of DB state."""
+    from app.core.rate_limit import login_limiter, registration_limiter
 
     login_limiter._attempts.clear()
+    registration_limiter._attempts.clear()
     yield
     login_limiter._attempts.clear()
+    registration_limiter._attempts.clear()
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -74,6 +76,9 @@ async def _clean_tables():
     yield
     async with test_engine.begin() as conn:
         for table in (
+            "subscription_payments",
+            "subscriptions",
+            "plans",
             "inventory_movements",
             "inventory_items",
             "supplier_invoices",

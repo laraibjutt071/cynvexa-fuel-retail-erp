@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Cookie, Depends, Request, Response
 from sqlalchemy import select
@@ -9,7 +9,7 @@ from sqlalchemy.orm import selectinload
 from app.api.deps import get_current_user, get_db
 from app.config import get_settings
 from app.core.audit import write_audit_log
-from app.core.rate_limit import login_limiter
+from app.core.rate_limit import login_limiter, registration_limiter
 from app.core.security import (
     create_access_token,
     generate_refresh_token,
@@ -17,9 +17,13 @@ from app.core.security import (
     hash_refresh_token,
     verify_password,
 )
-from app.exceptions import AuthenticationError
+from app.exceptions import AuthenticationError, ConflictError, ServiceUnavailableError
+from app.models.organization import Organization
+from app.models.plan import Plan
 from app.models.refresh_token import RefreshToken
 from app.models.role import Role
+from app.models.station import Station
+from app.models.subscription import BillingCycle, Subscription, SubscriptionStatus
 from app.models.user import User
 from app.models.user_station_role import UserStationRole
 from app.schemas.auth import (
@@ -27,6 +31,8 @@ from app.schemas.auth import (
     ChangePasswordRequest,
     LoginRequest,
     MeResponse,
+    RegisterRequest,
+    RegisterResponse,
     SessionRead,
     StationRoleSummary,
 )
@@ -89,6 +95,90 @@ async def login(
         raise AuthenticationError("Incorrect email or password.")
     login_limiter.reset(f"{payload.email}:{client_ip}")
     return await _issue_tokens(db, user, response)
+
+
+@router.post("/register", response_model=RegisterResponse, status_code=201)
+async def register(
+    payload: RegisterRequest, request: Request, response: Response, db: AsyncSession = Depends(get_db)
+) -> RegisterResponse:
+    """
+    Public, no-auth self-service sign-up - one call creates the company
+    (Organization), its first Station, the caller as that organization's
+    own org-wide Owner, and a 14-day-trial Subscription. This is the
+    master prompt's "Register a company" onboarding step; the rest of its
+    10-step onboarding list (verify email/phone, configure fuel grades,
+    add tanks, add employees, configure opening stock, start the first
+    shift) is deliberately NOT automated here - those are real operational
+    decisions the new owner makes through the normal app, not something to
+    fabricate on their behalf. No email/phone verification step exists yet
+    - see docs/ASSUMPTIONS.md.
+    """
+    client_ip = request.client.host if request.client else "unknown"
+    registration_limiter.check(client_ip)
+
+    existing = (await db.execute(select(User).where(User.email == payload.email))).scalar_one_or_none()
+    if existing is not None:
+        raise ConflictError("An account with this email already exists. Try logging in instead.")
+
+    owner_role = (await db.execute(select(Role).where(Role.name == "Owner"))).scalar_one_or_none()
+    if owner_role is None:
+        # Real operational state, not a user input error: permissions-roles was
+        # never seeded on this environment (see README's `python -m app.seed
+        # permissions-roles`).
+        raise ServiceUnavailableError("This CYNVEXA instance isn't fully set up yet. Please contact support.")
+
+    plan_code = payload.plan_code or "starter"
+    plan = (await db.execute(select(Plan).where(Plan.code == plan_code, Plan.is_active.is_(True)))).scalar_one_or_none()
+    if plan is None:
+        raise ServiceUnavailableError(f"The '{plan_code}' plan isn't available right now. Please contact support.")
+
+    user = User(email=payload.email, full_name=payload.full_name, hashed_password=hash_password(payload.password))
+    db.add(user)
+    await db.flush()
+
+    org = Organization(name=payload.company_name)
+    db.add(org)
+    await db.flush()
+
+    station = Station(organization_id=org.id, name=payload.station_name, code="ST-1")
+    db.add(station)
+    await db.flush()
+
+    db.add(UserStationRole(user_id=user.id, organization_id=org.id, station_id=None, role_id=owner_role.id))
+
+    now = datetime.now(timezone.utc)
+    trial_ends = now + timedelta(days=14)
+    db.add(
+        Subscription(
+            organization_id=org.id,
+            plan_id=plan.id,
+            status=SubscriptionStatus.TRIAL,
+            billing_cycle=BillingCycle.MONTHLY,
+            trial_ends_at=trial_ends,
+            current_period_start=now,
+            current_period_end=trial_ends,
+        )
+    )
+    await db.flush()
+
+    await write_audit_log(
+        db,
+        action="organization.self_register",
+        entity_type="Organization",
+        entity_id=str(org.id),
+        actor_user_id=user.id,
+        organization_id=org.id,
+        after={"name": org.name, "owner_email": user.email, "plan_code": plan.code},
+        ip_address=client_ip,
+    )
+
+    tokens = await _issue_tokens(db, user, response)
+    return RegisterResponse(
+        access_token=tokens.access_token,
+        expires_in_minutes=tokens.expires_in_minutes,
+        organization_id=org.id,
+        station_id=station.id,
+    )
 
 
 @router.post("/refresh", response_model=AccessTokenResponse)

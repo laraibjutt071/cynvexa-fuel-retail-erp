@@ -146,6 +146,7 @@ def create_app() -> FastAPI:
     app.include_router(reports.router)
     app.include_router(reports.org_router)
     app.include_router(platform.router)
+    app.include_router(platform.public_router)
     app.include_router(subscriptions.router)
 
     return app

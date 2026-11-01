@@ -58,6 +58,19 @@ export const translations = {
   "login.password": { en: "Password", ur: "Password" },
   "login.signIn": { en: "Sign in", ur: "Sign in Karein" },
   "login.signingIn": { en: "Signing in…", ur: "Sign in ho raha hai…" },
+  "login.noAccount": { en: "New station? Create an account", ur: "Naya Station? Account Banayein" },
+
+  // Registration
+  "register.title": { en: "Set up your station on CYNVEXA", ur: "CYNVEXA par Apna Station Set Up Karein" },
+  "register.subtitle": { en: "Start a 14-day free trial - no card required.", ur: "14 din ka free trial shuru karein - koi card nahi chahiye." },
+  "register.companyName": { en: "Company name", ur: "Company ka Naam" },
+  "register.stationName": { en: "First station name", ur: "Pehle Station ka Naam" },
+  "register.fullName": { en: "Your full name", ur: "Aap ka Pura Naam" },
+  "register.plan": { en: "Plan", ur: "Plan" },
+  "register.createAccount": { en: "Create account", ur: "Account Banayein" },
+  "register.creating": { en: "Setting up…", ur: "Set up ho raha hai…" },
+  "register.haveAccount": { en: "Already have an account? Sign in", ur: "Pehle se Account Hai? Sign in Karein" },
+  "register.perMonth": { en: "/month", ur: "/mahina" },
 
   // Today's Overview
   "today.welcome": { en: "Welcome", ur: "Khush Aamdeed" },

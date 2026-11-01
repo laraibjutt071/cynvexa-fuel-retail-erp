@@ -18,10 +18,23 @@ interface AccessTokenResponse {
   expires_in_minutes: number;
 }
 
+export interface RegisterInput {
+  company_name: string;
+  station_name?: string;
+  full_name: string;
+  email: string;
+  password: string;
+  plan_code?: string;
+}
+
 interface AuthContextValue {
   user: Me | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
+  /** Self-service sign-up - creates the organization, first station, the
+   * caller as its Owner, and a trial subscription, then signs them in.
+   * Returns the new org/station ids so the caller can redirect directly. */
+  register: (input: RegisterInput) => Promise<{ organizationId: string; stationId: string }>;
   logout: () => Promise<void>;
   /** Fetch wrapper that attaches the current access token and retries once
    * after a silent refresh if the server says the token is no longer valid. */
@@ -77,6 +90,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [fetchMe]
   );
 
+  const register = useCallback(
+    async (input: RegisterInput) => {
+      const body = await apiJson<AccessTokenResponse & { organization_id: string; station_id: string }>(
+        "/auth/register",
+        { method: "POST", body: JSON.stringify(input) }
+      );
+      accessTokenRef.current = body.access_token;
+      setUser(await fetchMe(body.access_token));
+      return { organizationId: body.organization_id, stationId: body.station_id };
+    },
+    [fetchMe]
+  );
+
   const logout = useCallback(async () => {
     await apiFetch("/auth/logout", { method: "POST" });
     accessTokenRef.current = null;
@@ -106,7 +132,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout, authFetch }}>
+    <AuthContext.Provider value={{ user, loading, login, register, logout, authFetch }}>
       {children}
     </AuthContext.Provider>
   );

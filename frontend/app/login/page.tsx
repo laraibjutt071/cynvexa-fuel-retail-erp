@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
 import { useLanguage } from "@/lib/i18n/context";
 import { ApiError } from "@/lib/api";
@@ -99,6 +100,12 @@ export default function LoginPage() {
           >
             {submitting ? t("login.signingIn") : t("login.signIn")}
           </button>
+
+          <p className="text-center text-sm text-ink-soft">
+            <Link href="/register" className="text-accent hover:underline">
+              {t("login.noAccount")}
+            </Link>
+          </p>
         </form>
       </div>
     </main>
