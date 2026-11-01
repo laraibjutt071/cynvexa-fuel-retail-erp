@@ -8,6 +8,7 @@ Start here:
 - [`docs/ASSUMPTIONS.md`](docs/ASSUMPTIONS.md) — every business rule the source blueprint left unresolved, the safe default implemented for each, and who needs to confirm it (owner or accountant).
 - [`docs/blueprint/`](docs/blueprint/) — the original discovery document.
 - [`docs/UX_UPGRADE_PLAN.md`](docs/UX_UPGRADE_PLAN.md) — the premium UI/UX, multilingual, dashboard and daily-ops upgrade: audit, what changed, and real test results.
+- [`docs/SAAS_GAP_ANALYSIS.md`](docs/SAAS_GAP_ANALYSIS.md) — the multi-tenant SaaS transformation: audit, prioritized roadmap, and what's built (subscription/billing foundation) vs. deliberately deferred.
 - [`docs/STAFF_GUIDE.md`](docs/STAFF_GUIDE.md) — plain-language guide to using the app day to day (owner, station manager, cashier/operator, accountant). Also published as a shareable page for staff who won't be reading this repo.
 
 Deploying or operating this app (not just developing it):
@@ -35,6 +36,7 @@ Seed the permission/role catalog and a first platform administrator (run once pe
 
 ```bash
 docker compose exec backend python -m app.seed permissions-roles
+docker compose exec backend python -m app.seed plans   # default Starter/Business/Enterprise plan catalog - edit later via /platform/plans
 docker compose exec backend python -m app.seed superuser --email you@example.com --password "a-strong-password" --full-name "Your Name"
 ```
 
