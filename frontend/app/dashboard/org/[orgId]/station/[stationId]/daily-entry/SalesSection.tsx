@@ -8,7 +8,10 @@ import { Card } from "@/components/Card";
 import { Button } from "@/components/ui/Button";
 import { Select, TextInput } from "@/components/ui/Field";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { ReasonDialog } from "@/components/ui/Dialog";
 import { Wallet } from "lucide-react";
+import { formatMoney } from "@/lib/format";
+import { usePermissions } from "@/lib/permissions";
 import type { CreditCustomer, PaymentMethod, Shift, ShiftTender } from "@/lib/types";
 import type { AuthFetch } from "./page";
 
@@ -24,19 +27,31 @@ export function SalesSection({
   stationId,
   shift,
   authFetch,
+  onDirtyChange,
 }: {
   orgId: string;
   stationId: string;
   shift: Shift;
   authFetch: AuthFetch;
+  onDirtyChange: (dirty: boolean) => void;
 }) {
   const { notify } = useToast();
   const { t } = useLanguage();
+  const { can } = usePermissions(orgId, stationId);
+  const canRecord = can("shift_reconcile:record");
+  const canReverse = can("shift_reconcile:approve");
   const [methods, setMethods] = useState<PaymentMethod[] | null>(null);
   const [customers, setCustomers] = useState<CreditCustomer[]>([]);
   const [tenders, setTenders] = useState<ShiftTender[] | null>(null);
   const [form, setForm] = useState({ payment_method_id: "", amount: "", credit_customer_id: "", reference: "" });
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    onDirtyChange(form.amount.trim() !== "");
+  }, [form.amount, onDirtyChange]);
+  const [reverseTarget, setReverseTarget] = useState<string | null>(null);
+  const [reversing, setReversing] = useState(false);
+  const [reverseError, setReverseError] = useState<string | null>(null);
 
   const shiftBase = `/organizations/${orgId}/stations/${stationId}/shifts/${shift.id}`;
   const readOnly = shift.status !== "open" && shift.status !== "closed";
@@ -85,26 +100,33 @@ export function SalesSection({
     }
   }
 
-  async function reverseTender(id: string) {
-    const reason = window.prompt("Reason for reversing this entry (it stays visible, just excluded from totals):");
-    if (!reason) return;
-    const resp = await authFetch(`${shiftBase}/tenders/${id}/reverse`, {
-      method: "PATCH",
-      body: JSON.stringify({ reason }),
-    });
-    if (!resp.ok) {
-      notify("error", "Could not reverse this entry.");
-      return;
+  async function submitReversal(reason: string) {
+    if (!reverseTarget || reversing) return;
+    setReversing(true);
+    setReverseError(null);
+    try {
+      const resp = await authFetch(`${shiftBase}/tenders/${reverseTarget}/reverse`, {
+        method: "PATCH",
+        body: JSON.stringify({ reason }),
+      });
+      if (!resp.ok) {
+        const body = await resp.json().catch(() => ({ detail: "Could not reverse this entry." }));
+        setReverseError(body.detail ?? "Could not reverse this entry.");
+        return;
+      }
+      notify("success", t("sales.entryReversed"));
+      setReverseTarget(null);
+      await load();
+    } finally {
+      setReversing(false);
     }
-    notify("success", t("sales.entryReversed"));
-    await load();
   }
 
   const total = (tenders ?? []).filter((tender) => !tender.reversed_at).reduce((sum, tender) => sum + Number(tender.amount), 0);
 
   return (
     <div className="space-y-6">
-      {!readOnly && (
+      {!readOnly && canRecord && (
         <Card title={t("sales.recordTitle")} description={t("sales.recordDescription")}>
           <form onSubmit={submit} className="grid grid-cols-1 gap-3 sm:grid-cols-4">
             <Select
@@ -152,7 +174,7 @@ export function SalesSection({
         </Card>
       )}
 
-      <Card title={t("sales.todaysCollections")} description={`${t("sales.totalSoFar")}: ${total.toFixed(2)}`}>
+      <Card title={t("sales.todaysCollections")} description={`${t("sales.totalSoFar")}: ${formatMoney(total)}`}>
         {!tenders ? (
           <p className="text-sm text-ink-soft">{t("common.loading")}</p>
         ) : tenders.length === 0 ? (
@@ -173,11 +195,11 @@ export function SalesSection({
                 return (
                   <tr key={tender.id} className={`border-b border-border/60 ${tender.reversed_at ? "opacity-50" : ""}`}>
                     <td className="py-2 pr-2 text-ink">{method?.name ?? "—"}</td>
-                    <td className="py-2 pr-2 text-ink">{tender.amount}</td>
+                    <td className="py-2 pr-2 text-ink tabular-nums">{formatMoney(tender.amount)}</td>
                     <td className="py-2 pr-2 text-ink-soft">{tender.reference ?? "—"}</td>
                     <td className="py-2 pr-2 text-right">
-                      {!tender.reversed_at && (
-                        <button onClick={() => reverseTender(tender.id)} className="text-xs font-medium text-danger-600 hover:underline">
+                      {!tender.reversed_at && canReverse && (
+                        <button onClick={() => { setReverseTarget(tender.id); setReverseError(null); }} className="text-xs font-medium text-danger-600 hover:underline">
                           {t("common.reverse")}
                         </button>
                       )}
@@ -189,6 +211,18 @@ export function SalesSection({
           </table>
         )}
       </Card>
+
+      <ReasonDialog
+        open={reverseTarget !== null}
+        onClose={() => setReverseTarget(null)}
+        onSubmit={submitReversal}
+        title="Reverse this collection entry"
+        description="It stays visible on the record but is excluded from shift totals. This cannot be undone."
+        label="Reason for reversing this entry"
+        confirmLabel="Reverse entry"
+        busy={reversing}
+        error={reverseError}
+      />
     </div>
   );
 }

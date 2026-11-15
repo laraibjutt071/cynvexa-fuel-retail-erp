@@ -1,32 +1,27 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
+import { usePermissions } from "@/lib/permissions";
+import { formatMoney } from "@/lib/format";
 import { useLanguage } from "@/lib/i18n/context";
 import { useToast } from "@/components/ui/Toast";
 import { Card } from "@/components/Card";
 import { Button } from "@/components/ui/Button";
 import { Field, Select, TextInput } from "@/components/ui/Field";
 import { Badge, type BadgeTone } from "@/components/ui/Badge";
-import type { OrgUser, Role, RoleAssignment, Session, Station, Subscription, SubscriptionPayment, SubscriptionStatus } from "@/lib/types";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { Wallet } from "lucide-react";
+import type { ExpenseCategory, OrgUser, PaymentMethod, Role, RoleAssignment, Session, Station, Subscription, SubscriptionPayment, SubscriptionStatus } from "@/lib/types";
 
 type AuthFetch = ReturnType<typeof useAuth>["authFetch"];
 
 export default function SettingsPage() {
   const { orgId } = useParams<{ orgId: string }>();
-  const { user, authFetch } = useAuth();
+  const { authFetch } = useAuth();
   const { language, setLanguage, t } = useLanguage();
-
-  const isSuperuser = user?.is_superuser ?? false;
-  const permissions = useMemo(() => {
-    const perms = new Set<string>();
-    for (const role of user?.station_roles ?? []) {
-      if (role.organization_id === orgId) role.permissions.forEach((p) => perms.add(p));
-    }
-    return perms;
-  }, [user, orgId]);
-  const can = useCallback((code: string) => isSuperuser || permissions.has(code), [isSuperuser, permissions]);
+  const { can } = usePermissions(orgId);
 
   return (
     <main className="flex-1">
@@ -40,6 +35,10 @@ export default function SettingsPage() {
       <div className="mx-auto max-w-5xl space-y-6 px-6 py-8">
         <AccountCard authFetch={authFetch} language={language} setLanguage={setLanguage} t={t} />
         {can("subscription:read") && <BillingCard orgId={orgId} authFetch={authFetch} />}
+        {can("expense:approve") && <ExpenseCategoriesCard orgId={orgId} authFetch={authFetch} />}
+        {can(["payment_method:manage", "payment_method:read"]) && (
+          <PaymentMethodsCard orgId={orgId} authFetch={authFetch} canManage={can("payment_method:manage")} />
+        )}
         {can("user:read") && (
           <OrgUsersCard
             orgId={orgId}
@@ -417,6 +416,95 @@ const SUB_STATUS_TONE: Record<SubscriptionStatus, BadgeTone> = {
   expired: "danger",
 };
 
+function ExpenseCategoriesCard({ orgId, authFetch }: { orgId: string; authFetch: AuthFetch }) {
+  const { notify } = useToast();
+  const [categories, setCategories] = useState<ExpenseCategory[]>([]);
+  const [newCat, setNewCat] = useState({ name: "", description: "" });
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    const resp = await authFetch(`/organizations/${orgId}/expense-categories`);
+    if (resp.ok) setCategories(await resp.json());
+  }, [authFetch, orgId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  async function create(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      const resp = await authFetch(`/organizations/${orgId}/expense-categories`, {
+        method: "POST",
+        body: JSON.stringify(newCat),
+      });
+      if (resp.ok) {
+        notify("success", "Expense category created.");
+        setNewCat({ name: "", description: "" });
+        await load();
+      } else {
+        const body = await resp.json().catch(() => ({ detail: "Failed." }));
+        notify("error", body.detail ?? "Failed.");
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function toggle(cat: ExpenseCategory) {
+    const resp = await authFetch(`/organizations/${orgId}/expense-categories/${cat.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ is_active: !cat.is_active }),
+    });
+    if (resp.ok) await load();
+  }
+
+  return (
+    <Card title="Expense Categories">
+      {categories.length === 0 ? (
+        <p className="text-sm text-ink-soft">No expense categories yet. Add categories to standardize expense tracking.</p>
+      ) : (
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-border text-left text-ink-faint">
+              <th className="py-2 pr-2">Name</th>
+              <th className="py-2 pr-2">Description</th>
+              <th className="py-2 pr-2">Status</th>
+              <th className="py-2 pr-2"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {categories.map((c) => (
+              <tr key={c.id} className="border-b border-border/60">
+                <td className="py-2 pr-2 text-ink font-medium">{c.name}</td>
+                <td className="py-2 pr-2 text-ink-soft">{c.description ?? "—"}</td>
+                <td className="py-2 pr-2">
+                  <Badge tone={c.is_active ? "success" : "neutral"}>{c.is_active ? "Active" : "Inactive"}</Badge>
+                </td>
+                <td className="py-2 pr-2 text-right">
+                  <button onClick={() => toggle(c)} className="text-xs font-medium text-accent hover:underline">
+                    {c.is_active ? "Deactivate" : "Activate"}
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      <form onSubmit={create} className="mt-4 grid grid-cols-1 gap-3 border-t border-border pt-4 sm:grid-cols-3">
+        <Field label="Category Name" required>
+          {(id) => <TextInput id={id} required value={newCat.name} onChange={(e) => setNewCat({ ...newCat, name: e.target.value })} placeholder="Generator Fuel" />}
+        </Field>
+        <Field label="Description">
+          {(id) => <TextInput id={id} value={newCat.description} onChange={(e) => setNewCat({ ...newCat, description: e.target.value })} placeholder="Daily generator running costs" />}
+        </Field>
+        <div className="flex items-end">
+          <Button type="submit" busy={busy} className="w-full">Add Category</Button>
+        </div>
+      </form>
+    </Card>
+  );
+}
+
 function BillingCard({ orgId, authFetch }: { orgId: string; authFetch: AuthFetch }) {
   const [subscription, setSubscription] = useState<Subscription | "none" | null>(null);
   const [payments, setPayments] = useState<SubscriptionPayment[]>([]);
@@ -475,7 +563,7 @@ function BillingCard({ orgId, authFetch }: { orgId: string; authFetch: AuthFetch
                 {payments.map((p) => (
                   <tr key={p.id} className="border-b border-border/60">
                     <td className="py-2 pr-2 text-ink">{new Date(p.created_at).toLocaleDateString()}</td>
-                    <td className="py-2 pr-2 text-ink">{p.amount}</td>
+                    <td className="py-2 pr-2 text-ink tabular-nums">{formatMoney(p.amount)}</td>
                     <td className="py-2 pr-2 text-ink-soft">{p.method.replace(/_/g, " ")}</td>
                     <td className="py-2 pr-2 text-ink-soft">{p.reference ?? "—"}</td>
                   </tr>
@@ -484,6 +572,136 @@ function BillingCard({ orgId, authFetch }: { orgId: string; authFetch: AuthFetch
             </table>
           )}
         </>
+      )}
+    </Card>
+  );
+}
+
+function PaymentMethodsCard({
+  orgId,
+  authFetch,
+  canManage,
+}: {
+  orgId: string;
+  authFetch: AuthFetch;
+  canManage: boolean;
+}) {
+  const { notify } = useToast();
+  const [methods, setMethods] = useState<PaymentMethod[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  const [newMethod, setNewMethod] = useState({ code: "", name: "", category: "cash" });
+  const [busy, setBusy] = useState(false);
+
+  const base = `/organizations/${orgId}/payment-methods`;
+
+  const load = useCallback(async () => {
+    const resp = await authFetch(base);
+    if (resp.ok) setMethods(await resp.json());
+    setLoaded(true);
+  }, [authFetch, base]);
+
+  useEffect(() => { load(); }, [load]);
+
+  async function create(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      const resp = await authFetch(base, { method: "POST", body: JSON.stringify(newMethod) });
+      if (resp.ok) {
+        notify("success", "Payment method added.");
+        setNewMethod({ code: "", name: "", category: "cash" });
+        await load();
+      } else {
+        const body = await resp.json().catch(() => ({ detail: "Could not add this payment method." }));
+        notify("error", body.detail ?? "Could not add this payment method.");
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Deactivation only, matching every other master-data screen here - a
+  // payment method already used on a real tender can never be safely
+  // deleted (no DELETE endpoint exists for this resource), so is_active
+  // is the only state change this screen offers.
+  async function toggle(method: PaymentMethod) {
+    const resp = await authFetch(`${base}/${method.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ is_active: !method.is_active }),
+    });
+    if (resp.ok) {
+      notify("success", method.is_active ? "Payment method deactivated." : "Payment method activated.");
+      await load();
+    } else {
+      const body = await resp.json().catch(() => ({ detail: "Could not update this payment method." }));
+      notify("error", body.detail ?? "Could not update this payment method.");
+    }
+  }
+
+  return (
+    <Card title="Payment Methods" description="How customers pay - cash, card, digital wallets, and credit. Shown as options when recording a shift's sales.">
+      {!loaded ? (
+        <p className="text-sm text-ink-soft">Loading…</p>
+      ) : methods.length === 0 ? (
+        <EmptyState
+          icon={Wallet}
+          title="No payment methods configured"
+          description="Add at least a cash method below before cashiers can record sales collections."
+        />
+      ) : (
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-border text-left text-ink-faint">
+              <th className="py-2 pr-2">Code</th>
+              <th className="py-2 pr-2">Name</th>
+              <th className="py-2 pr-2">Category</th>
+              <th className="py-2 pr-2">Status</th>
+              {canManage && <th className="py-2 pr-2"></th>}
+            </tr>
+          </thead>
+          <tbody>
+            {methods.map((m) => (
+              <tr key={m.id} className="border-b border-border/60">
+                <td className="py-2 pr-2 font-mono text-ink">{m.code}</td>
+                <td className="py-2 pr-2 text-ink">{m.name}</td>
+                <td className="py-2 pr-2 text-ink-soft capitalize">{m.category}</td>
+                <td className="py-2 pr-2">
+                  <Badge tone={m.is_active ? "success" : "neutral"}>{m.is_active ? "Active" : "Inactive"}</Badge>
+                </td>
+                {canManage && (
+                  <td className="py-2 pr-2 text-right">
+                    <button onClick={() => toggle(m)} className="text-xs font-medium text-accent hover:underline">
+                      {m.is_active ? "Deactivate" : "Activate"}
+                    </button>
+                  </td>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {canManage && (
+        <form onSubmit={create} className="mt-4 grid grid-cols-1 gap-3 border-t border-border pt-4 sm:grid-cols-4">
+          <Field label="Code">
+            {(id) => <TextInput id={id} required value={newMethod.code} onChange={(e) => setNewMethod({ ...newMethod, code: e.target.value })} placeholder="JAZZCASH" />}
+          </Field>
+          <Field label="Name">
+            {(id) => <TextInput id={id} required value={newMethod.name} onChange={(e) => setNewMethod({ ...newMethod, name: e.target.value })} placeholder="JazzCash" />}
+          </Field>
+          <Field label="Category">
+            {(id) => (
+              <select id={id} value={newMethod.category} onChange={(e) => setNewMethod({ ...newMethod, category: e.target.value })} className="block w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-ink">
+                <option value="cash">Cash</option>
+                <option value="card">Card</option>
+                <option value="digital">Digital</option>
+                <option value="credit">Credit</option>
+              </select>
+            )}
+          </Field>
+          <div className="flex items-end">
+            <Button type="submit" busy={busy} className="w-full">Add Method</Button>
+          </div>
+        </form>
       )}
     </Card>
   );

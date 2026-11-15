@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
 import { Card } from "@/components/Card";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { Tabs } from "@/components/ui/Tabs";
 import { ExportButton } from "@/components/ExportButton";
 import { DateRangeFilter, defaultDateRange } from "@/components/DateRangeFilter";
 import { SalesOverTimeChart } from "@/components/charts/SalesOverTimeChart";
@@ -86,42 +87,27 @@ export default function StationDashboardPage() {
 
   return (
     <main className="flex-1">
-      <header className="border-b border-border bg-surface px-6 py-4">
-        <div className="mx-auto flex max-w-5xl items-center justify-between">
-          <div>
-            <Link href="/dashboard" className="text-xs text-brand-500 hover:underline">
-              ← Back to organizations
-            </Link>
-            <h1 className="text-lg font-semibold text-ink">Station dashboard</h1>
-          </div>
-        </div>
-      </header>
+      <PageHeader
+        title="Station dashboard"
+        breadcrumbs={[
+          { label: "Organizations", href: "/dashboard" },
+          { label: "Station" },
+        ]}
+      />
 
-      <div className="mx-auto max-w-5xl space-y-6 px-6 py-8">
+      <div className="mx-auto max-w-6xl space-y-6 px-6 py-8">
         {availableTabs.length === 0 ? (
           <p className="text-sm text-ink-soft">
             Your role does not include dashboard visibility for this station.
           </p>
         ) : (
           <>
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-1">
-              <div className="flex gap-2" role="tablist">
-                {availableTabs.map((t) => (
-                  <button
-                    key={t.id}
-                    role="tab"
-                    aria-selected={activeTab === t.id}
-                    onClick={() => setActiveTab(t.id)}
-                    className={`border-b-2 px-3 py-2 text-sm font-medium ${
-                      activeTab === t.id
-                        ? "border-brand-500 text-brand-500"
-                        : "border-transparent text-ink-soft hover:text-ink"
-                    }`}
-                  >
-                    {t.label}
-                  </button>
-                ))}
-              </div>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <Tabs
+                tabs={availableTabs.map((t) => ({ id: t.id, label: t.label }))}
+                active={activeTab ?? availableTabs[0].id}
+                onChange={(id) => setActiveTab(id as Tab)}
+              />
               {activeTab !== "inventory" && <DateRangeFilter dateFrom={range.dateFrom} dateTo={range.dateTo} onChange={setRange} />}
             </div>
 

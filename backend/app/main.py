@@ -7,11 +7,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api import (
+    attendance,
     audit,
     auth,
     credit_collections,
     credit_customers,
     dispensers,
+    expense_categories,
     expenses,
     fuel_grades,
     fuel_prices,
@@ -23,10 +25,12 @@ from app.api import (
     organizations,
     payment_methods,
     platform,
+    reading_corrections,
     reports,
     roles,
     shift_cash_movements,
     shift_reconciliation,
+    shift_templates,
     shift_tenders,
     shifts,
     stations,
@@ -82,6 +86,17 @@ def create_app() -> FastAPI:
             },
         )
         response.headers["X-Request-ID"] = request_id
+        # Two headers safe to set unconditionally at the application layer -
+        # neither can break a working frontend (unlike a strict
+        # Content-Security-Policy, which risks blocking Next.js's own
+        # scripts/styles if set without testing against the real build).
+        # HSTS, CSP and frame-ancestors are deliberately NOT set here: they
+        # belong at the reverse-proxy layer once one is actually deployed in
+        # front of HTTPS (see docs/CLOUD_DEPLOYMENT_PLAN.md) - setting HSTS
+        # on a server that might still be reached over plain HTTP in some
+        # environment would be actively wrong, not just incomplete.
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         return response
 
     @app.exception_handler(AppError)
@@ -132,6 +147,7 @@ def create_app() -> FastAPI:
     app.include_router(fuel_prices.router)
     app.include_router(tanker_receipts.router)
     app.include_router(shifts.router)
+    app.include_router(reading_corrections.router)
     app.include_router(payment_methods.router)
     app.include_router(credit_collections.balances_router)
     app.include_router(credit_customers.router)
@@ -145,6 +161,11 @@ def create_app() -> FastAPI:
     app.include_router(inventory_movements.router)
     app.include_router(reports.router)
     app.include_router(reports.org_router)
+    app.include_router(reports.supplier_report_router)
+    app.include_router(expense_categories.router)
+    app.include_router(shift_templates.router)
+    app.include_router(attendance.attendance_router)
+    app.include_router(attendance.payroll_router)
     app.include_router(platform.router)
     app.include_router(platform.public_router)
     app.include_router(subscriptions.router)

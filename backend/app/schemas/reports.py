@@ -59,3 +59,57 @@ class PendingApprovalsReport(BaseModel):
     pending_expenses: int
     unapproved_supplier_payments: int
     low_stock_inventory_items: int
+
+
+class ExpenseSummaryRow(BaseModel):
+    category: str
+    total_amount: Decimal
+    approved_amount: Decimal
+    pending_amount: Decimal
+    rejected_amount: Decimal
+    count: int
+
+
+class ExpenseSummaryReport(BaseModel):
+    date_from: date
+    date_to: date
+    rows: list[ExpenseSummaryRow]
+    grand_total: Decimal
+    grand_approved: Decimal
+
+
+class InventoryStockRow(BaseModel):
+    inventory_item_id: uuid.UUID
+    sku: str
+    name: str
+    unit: str
+    on_hand: Decimal
+    reorder_level: Decimal
+    is_below_reorder: bool
+
+
+class SupplierLedgerStatementEntry(BaseModel):
+    entry_date: date
+    entry_type: str
+    reference: str | None
+    description: str | None
+    amount: Decimal
+    running_balance: Decimal
+
+
+class SupplierLedgerStatement(BaseModel):
+    supplier_id: uuid.UUID
+    supplier_name: str
+    date_from: date
+    date_to: date
+    opening_balance: Decimal
+    entries: list[SupplierLedgerStatementEntry]
+    closing_balance: Decimal
+
+
+class PriceChangeHistoryRow(BaseModel):
+    fuel_grade_id: uuid.UUID
+    fuel_grade_name: str
+    price_per_litre: Decimal
+    effective_from: datetime
+    previous_price: Decimal | None

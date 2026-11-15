@@ -44,6 +44,10 @@ from app.models.inventory_movement import (
     InventoryMovement,
     InventoryMovementType,
 )
+from app.models.reading_correction import CorrectionStatus, ReadingCorrection, ReadingType
+from app.models.attendance import AttendanceRecord, AttendanceStatus, PayrollRule, SalaryRecord
+from app.models.expense_category import ExpenseCategory
+from app.models.shift_template import ShiftTemplate
 from app.models.plan import Plan
 from app.models.subscription import BillingCycle, Subscription, SubscriptionStatus
 from app.models.subscription_payment import SubscriptionPayment, SubscriptionPaymentStatus
@@ -101,10 +105,19 @@ __all__ = [
     "INCREASING_INVENTORY_MOVEMENT_TYPES",
     "DECREASING_INVENTORY_MOVEMENT_TYPES",
     "InventoryMovement",
+    "ReadingCorrection",
+    "ReadingType",
+    "CorrectionStatus",
+    "AttendanceRecord",
+    "AttendanceStatus",
+    "PayrollRule",
+    "SalaryRecord",
     "Plan",
     "Subscription",
     "SubscriptionStatus",
     "BillingCycle",
     "SubscriptionPayment",
     "SubscriptionPaymentStatus",
+    "ExpenseCategory",
+    "ShiftTemplate",
 ]

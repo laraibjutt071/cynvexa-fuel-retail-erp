@@ -33,7 +33,7 @@ class ShiftTankReading(UUIDPKMixin, Base):
     )
 
     shift_id: Mapped[uuid.UUID] = mapped_column(
-        PG_UUID(as_uuid=True), ForeignKey("shifts.id", ondelete="CASCADE"), nullable=False
+        PG_UUID(as_uuid=True), ForeignKey("shifts.id", ondelete="RESTRICT"), nullable=False
     )
     tank_id: Mapped[uuid.UUID] = mapped_column(
         PG_UUID(as_uuid=True), ForeignKey("tanks.id", ondelete="RESTRICT"), nullable=False

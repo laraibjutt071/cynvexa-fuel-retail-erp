@@ -1,10 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
+import { usePermissions } from "@/lib/permissions";
+import { formatMoney } from "@/lib/format";
 import { Card } from "@/components/Card";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { Tabs } from "@/components/ui/Tabs";
+import { StatusBadge } from "@/components/ui/Badge";
+import { ReasonDialog } from "@/components/ui/Dialog";
 import { ExportButton } from "@/components/ExportButton";
 import type {
   AuditLogEntry,
@@ -33,26 +38,11 @@ export default function OrgDashboardPage() {
     if (!loading && !user) router.replace("/login");
   }, [loading, user, router]);
 
-  const isSuperuser = user?.is_superuser ?? false;
-
-  // Union across every role this user holds in this org - a user can hold
-  // more than one station-scoped role within the same org (e.g.
-  // Accountant at one station, Station Manager at another), and this
-  // page's own visibility must not be narrower than their real access.
-  // A superuser bypasses every server-side permission check (see
-  // app/api/deps.py::require_permission), so `can()` - not this raw set -
-  // is what every visibility decision on this page must go through.
-  const permissions = useMemo(() => {
-    const perms = new Set<string>();
-    for (const role of user?.station_roles ?? []) {
-      if (role.organization_id === orgId) role.permissions.forEach((p) => perms.add(p));
-    }
-    return perms;
-  }, [user, orgId]);
-  const can = useCallback(
-    (code: string) => isSuperuser || permissions.has(code),
-    [isSuperuser, permissions]
-  );
+  // One canonical permission rule (lib/permissions.ts), not a page-local
+  // reimplementation - this used to filter by organization_id only, unlike
+  // AppShell's version which also respected station scope; both now share
+  // the same logic.
+  const { can } = usePermissions(orgId);
 
   const availableTabs = TABS.filter((t) => can(t.permission));
   const searchParams = useSearchParams();
@@ -80,41 +70,26 @@ export default function OrgDashboardPage() {
 
   return (
     <main className="flex-1">
-      <header className="border-b border-border bg-surface px-6 py-4">
-        <div className="mx-auto flex max-w-5xl items-center justify-between">
-          <div>
-            <Link href="/dashboard" className="text-xs text-brand-500 hover:underline">
-              ← Back to organizations
-            </Link>
-            <h1 className="text-lg font-semibold text-ink">Organization dashboard</h1>
-          </div>
-        </div>
-      </header>
+      <PageHeader
+        title="Organization dashboard"
+        breadcrumbs={[
+          { label: "Organizations", href: "/dashboard" },
+          { label: "Dashboard" },
+        ]}
+      />
 
-      <div className="mx-auto max-w-5xl space-y-6 px-6 py-8">
+      <div className="mx-auto max-w-6xl space-y-6 px-6 py-8">
         {availableTabs.length === 0 ? (
           <p className="text-sm text-ink-soft">
             Your role does not include dashboard visibility for this organization.
           </p>
         ) : (
           <>
-            <div className="flex gap-2 border-b border-border" role="tablist">
-              {availableTabs.map((t) => (
-                <button
-                  key={t.id}
-                  role="tab"
-                  aria-selected={activeTab === t.id}
-                  onClick={() => setActiveTab(t.id)}
-                  className={`border-b-2 px-3 py-2 text-sm font-medium ${
-                    activeTab === t.id
-                      ? "border-brand-500 text-brand-500"
-                      : "border-transparent text-ink-soft hover:text-ink"
-                  }`}
-                >
-                  {t.label}
-                </button>
-              ))}
-            </div>
+            <Tabs
+              tabs={availableTabs.map((t) => ({ id: t.id, label: t.label }))}
+              active={activeTab ?? availableTabs[0].id}
+              onChange={(id) => setActiveTab(id as Tab)}
+            />
 
             {activeTab === "overview" && <OverviewTab orgId={orgId} authFetch={authFetch} />}
             {activeTab === "suppliers" && <SuppliersTab orgId={orgId} authFetch={authFetch} />}
@@ -201,7 +176,7 @@ function SuppliersTab({ orgId, authFetch }: { orgId: string; authFetch: AuthFetc
     >
       <Table
         columns={["Supplier", "Balance owed"]}
-        rows={rows?.map((r) => [r.supplier_name, r.balance]) ?? null}
+        rows={rows?.map((r) => [r.supplier_name, formatMoney(r.balance)]) ?? null}
       />
     </Card>
   );
@@ -230,7 +205,7 @@ function CreditTab({ orgId, authFetch }: { orgId: string; authFetch: AuthFetch }
     >
       <Table
         columns={["Customer", "Balance receivable"]}
-        rows={rows?.map((r) => [r.credit_customer_name, r.balance]) ?? null}
+        rows={rows?.map((r) => [r.credit_customer_name, formatMoney(r.balance)]) ?? null}
       />
     </Card>
   );
@@ -247,6 +222,9 @@ function ExpensesTab({
 }) {
   const [rows, setRows] = useState<Expense[] | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [approvingId, setApprovingId] = useState<string | null>(null);
+  const [rejectTarget, setRejectTarget] = useState<string | null>(null);
+  const [rejecting, setRejecting] = useState(false);
 
   const load = useCallback(async () => {
     const resp = await authFetch(`/organizations/${orgId}/expenses?limit=100`);
@@ -262,28 +240,41 @@ function ExpensesTab({
   }, [load]);
 
   async function approve(id: string) {
+    if (approvingId) return; // guard against a double-click re-firing the approval
     setActionError(null);
-    const resp = await authFetch(`/organizations/${orgId}/expenses/${id}/approve`, { method: "PATCH" });
-    if (!resp.ok) {
-      setActionError("Could not approve this expense.");
-      return;
+    setApprovingId(id);
+    try {
+      const resp = await authFetch(`/organizations/${orgId}/expenses/${id}/approve`, { method: "PATCH" });
+      if (!resp.ok) {
+        const body = await resp.json().catch(() => ({ detail: "Could not approve this expense." }));
+        setActionError(body.detail ?? "Could not approve this expense.");
+        return;
+      }
+      await load();
+    } finally {
+      setApprovingId(null);
     }
-    await load();
   }
 
-  async function reject(id: string) {
-    const reason = window.prompt("Reason for rejecting this expense:");
-    if (!reason) return;
+  async function submitRejection(reason: string) {
+    if (!rejectTarget) return;
+    setRejecting(true);
     setActionError(null);
-    const resp = await authFetch(`/organizations/${orgId}/expenses/${id}/reject`, {
-      method: "PATCH",
-      body: JSON.stringify({ rejection_reason: reason }),
-    });
-    if (!resp.ok) {
-      setActionError("Could not reject this expense.");
-      return;
+    try {
+      const resp = await authFetch(`/organizations/${orgId}/expenses/${rejectTarget}/reject`, {
+        method: "PATCH",
+        body: JSON.stringify({ rejection_reason: reason }),
+      });
+      if (!resp.ok) {
+        const body = await resp.json().catch(() => ({ detail: "Could not reject this expense." }));
+        setActionError(body.detail ?? "Could not reject this expense.");
+        return;
+      }
+      setRejectTarget(null);
+      await load();
+    } finally {
+      setRejecting(false);
     }
-    await load();
   }
 
   return (
@@ -311,7 +302,7 @@ function ExpensesTab({
                 <td className="py-2 pr-2 text-ink">{e.expense_date}</td>
                 <td className="py-2 pr-2 text-ink">{e.category}</td>
                 <td className="py-2 pr-2 text-ink">{e.description}</td>
-                <td className="py-2 pr-2 text-ink">{e.amount}</td>
+                <td className="py-2 pr-2 text-ink tabular-nums">{formatMoney(e.amount)}</td>
                 <td className="py-2 pr-2">
                   <StatusBadge status={e.status} />
                 </td>
@@ -319,10 +310,17 @@ function ExpensesTab({
                   <td className="py-2 pr-2">
                     {e.status === "pending" && (
                       <div className="flex gap-2">
-                        <button onClick={() => approve(e.id)} className="text-xs font-medium text-brand-500 hover:underline">
-                          Approve
+                        <button
+                          onClick={() => approve(e.id)}
+                          disabled={approvingId === e.id}
+                          className="text-xs font-medium text-brand-500 hover:underline disabled:opacity-50"
+                        >
+                          {approvingId === e.id ? "Approving…" : "Approve"}
                         </button>
-                        <button onClick={() => reject(e.id)} className="text-xs font-medium text-danger-600 hover:underline">
+                        <button
+                          onClick={() => setRejectTarget(e.id)}
+                          className="text-xs font-medium text-danger-600 hover:underline"
+                        >
                           Reject
                         </button>
                       </div>
@@ -334,6 +332,17 @@ function ExpensesTab({
           </tbody>
         </table>
       )}
+      <ReasonDialog
+        open={rejectTarget !== null}
+        onClose={() => setRejectTarget(null)}
+        onSubmit={submitRejection}
+        title="Reject expense"
+        description="This expense will be marked rejected and will not be paid. The reason is recorded in the audit trail."
+        label="Reason for rejecting this expense"
+        confirmLabel="Reject expense"
+        busy={rejecting}
+        error={actionError}
+      />
     </Card>
   );
 }
@@ -400,18 +409,6 @@ function AuditTab({ orgId, authFetch }: { orgId: string; authFetch: AuthFetch })
   );
 }
 
-function StatusBadge({ status }: { status: string }) {
-  const colors: Record<string, string> = {
-    pending: "bg-warning-50 text-warning-600",
-    approved: "bg-success-50 text-success-600",
-    rejected: "bg-danger-50 text-danger-600",
-  };
-  return (
-    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${colors[status] ?? "bg-surface-elevated text-ink"}`}>
-      {status}
-    </span>
-  );
-}
 
 function Table({ columns, rows }: { columns: string[]; rows: (string | number)[][] | null }) {
   if (!rows) return <p className="text-sm text-ink-soft">Loading…</p>;

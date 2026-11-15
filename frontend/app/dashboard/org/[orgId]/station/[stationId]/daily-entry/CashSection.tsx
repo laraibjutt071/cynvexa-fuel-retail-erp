@@ -1,6 +1,7 @@
 "use client";
 
 import { Banknote } from "lucide-react";
+import { formatMoney } from "@/lib/format";
 import { useCallback, useEffect, useState } from "react";
 import { useLanguage } from "@/lib/i18n/context";
 import type { TranslationKey } from "@/lib/i18n/translations";
@@ -10,6 +11,8 @@ import { Button } from "@/components/ui/Button";
 import { Field, Select, TextInput } from "@/components/ui/Field";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Badge } from "@/components/ui/Badge";
+import { ConfirmDialog } from "@/components/ui/Dialog";
+import { usePermissions } from "@/lib/permissions";
 import type { CashMovementType, Shift, ShiftCashMovement, ShiftReconciliation } from "@/lib/types";
 import type { AuthFetch } from "./page";
 
@@ -31,15 +34,21 @@ export function CashSection({
   shift,
   authFetch,
   onShiftChanged,
+  onDirtyChange,
 }: {
   orgId: string;
   stationId: string;
   shift: Shift;
   authFetch: AuthFetch;
   onShiftChanged: () => void;
+  onDirtyChange: (dirty: boolean) => void;
 }) {
   const { notify } = useToast();
   const { t } = useLanguage();
+  const { can } = usePermissions(orgId, stationId);
+  const canApproveMovement = can("shift_reconcile:approve");
+  const [authorizeConfirmOpen, setAuthorizeConfirmOpen] = useState(false);
+  const [authorizing, setAuthorizing] = useState(false);
   const [movements, setMovements] = useState<ShiftCashMovement[] | null>(null);
   const [reconciliation, setReconciliation] = useState<ShiftReconciliation | null | "none">("none");
   const [form, setForm] = useState<{ movement_type: CashMovementType; amount: string; reason: string }>({
@@ -49,6 +58,12 @@ export function CashSection({
   });
   const [actualCash, setActualCash] = useState("");
   const [explanation, setExplanation] = useState("");
+
+  useEffect(() => {
+    onDirtyChange(
+      form.amount.trim() !== "" || form.reason.trim() !== "" || actualCash.trim() !== "" || explanation.trim() !== ""
+    );
+  }, [form.amount, form.reason, actualCash, explanation, onDirtyChange]);
   const [submitting, setSubmitting] = useState(false);
 
   const shiftBase = `/organizations/${orgId}/stations/${stationId}/shifts/${shift.id}`;
@@ -119,14 +134,20 @@ export function CashSection({
   }
 
   async function authorize() {
-    const resp = await authFetch(`${shiftBase}/reconciliation/authorize`, { method: "PATCH", body: JSON.stringify({}) });
-    if (!resp.ok) {
-      const body = await resp.json().catch(() => ({ detail: "Could not authorize this discrepancy." }));
-      notify("error", body.detail ?? "Could not authorize this discrepancy.");
-      return;
+    setAuthorizing(true);
+    try {
+      const resp = await authFetch(`${shiftBase}/reconciliation/authorize`, { method: "PATCH", body: JSON.stringify({}) });
+      if (!resp.ok) {
+        const body = await resp.json().catch(() => ({ detail: "Could not authorize this discrepancy." }));
+        notify("error", body.detail ?? "Could not authorize this discrepancy.");
+        return;
+      }
+      notify("success", t("cash.discrepancyAuthorizedToast"));
+      setAuthorizeConfirmOpen(false);
+      await load();
+    } finally {
+      setAuthorizing(false);
     }
-    notify("success", t("cash.discrepancyAuthorizedToast"));
-    await load();
   }
 
   const pendingApprovals = (movements ?? []).filter(
@@ -188,7 +209,7 @@ export function CashSection({
                 {movements.map((m) => (
                   <tr key={m.id} className={`border-b border-border/60 ${m.reversed_at ? "opacity-50" : ""}`}>
                     <td className="py-2 pr-2 text-ink">{t(MOVEMENT_LABEL_KEY[m.movement_type])}</td>
-                    <td className="py-2 pr-2 text-ink">{m.amount}</td>
+                    <td className="py-2 pr-2 text-ink tabular-nums">{formatMoney(m.amount)}</td>
                     <td className="py-2 pr-2 text-ink-soft">{m.reason}</td>
                     <td className="py-2 pr-2">
                       {m.reversed_at ? (
@@ -204,7 +225,7 @@ export function CashSection({
                       )}
                     </td>
                     <td className="py-2 pr-2 text-right">
-                      {DECREASING.includes(m.movement_type) && !m.approved_by_user_id && !m.reversed_at && (
+                      {DECREASING.includes(m.movement_type) && !m.approved_by_user_id && !m.reversed_at && canApproveMovement && (
                         <button onClick={() => approveMovement(m.id)} className="text-xs font-medium text-accent hover:underline">
                           {t("common.approve")}
                         </button>
@@ -259,28 +280,34 @@ export function CashSection({
           </form>
         ) : (
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-            <SummaryTile label={t("cash.expectedRevenue")} value={reconciliation.expected_fuel_revenue} />
-            <SummaryTile label={t("cash.collectedAllMethods")} value={reconciliation.total_tender_amount} />
-            <SummaryTile label={t("cash.expectedCash")} value={reconciliation.expected_physical_cash} />
-            <SummaryTile label={t("cash.actualCashCounted")} value={reconciliation.actual_physical_cash} />
+            <SummaryTile label={t("cash.expectedRevenue")} value={formatMoney(reconciliation.expected_fuel_revenue)} />
+            <SummaryTile label={t("cash.collectedAllMethods")} value={formatMoney(reconciliation.total_tender_amount)} />
+            <SummaryTile label={t("cash.expectedCash")} value={formatMoney(reconciliation.expected_physical_cash)} />
+            <SummaryTile label={t("cash.actualCashCounted")} value={formatMoney(reconciliation.actual_physical_cash)} />
             <SummaryTile
               label={t("cash.shortageExcess")}
-              value={reconciliation.cash_shortage_excess}
+              value={formatMoney(reconciliation.cash_shortage_excess)}
               tone={reconciliation.cash_within_tolerance ? "success" : "danger"}
             />
             <SummaryTile
               label={t("cash.revenueVsCollections")}
-              value={`${reconciliation.revenue_variance} (${reconciliation.revenue_variance_percent}%)`}
+              value={`${formatMoney(reconciliation.revenue_variance)} (${reconciliation.revenue_variance_percent}%)`}
               tone={reconciliation.revenue_within_tolerance ? "success" : "danger"}
             />
             {reconciliation.requires_authorization && (
               <div className="col-span-2 sm:col-span-4">
                 {reconciliation.authorized_at ? (
                   <Badge tone="success">{t("cash.discrepancyAuthorized")}</Badge>
+                ) : !canApproveMovement ? (
+                  <div className="rounded-lg border border-caution-100 bg-caution-50 p-3">
+                    <p className="text-sm text-caution-600">
+                      {t("cash.needsAuthorization")} Only an Accountant or Owner can authorize this.
+                    </p>
+                  </div>
                 ) : (
                   <div className="flex flex-wrap items-center gap-3 rounded-lg border border-caution-100 bg-caution-50 p-3">
                     <p className="text-sm text-caution-600">{t("cash.needsAuthorization")}</p>
-                    <Button size="sm" onClick={authorize}>
+                    <Button size="sm" onClick={() => setAuthorizeConfirmOpen(true)}>
                       {t("cash.authorize")}
                     </Button>
                   </div>
@@ -290,6 +317,17 @@ export function CashSection({
           </div>
         )}
       </Card>
+
+      <ConfirmDialog
+        open={authorizeConfirmOpen}
+        onClose={() => setAuthorizeConfirmOpen(false)}
+        onConfirm={authorize}
+        title="Authorize this discrepancy?"
+        description="This confirms the cash/revenue variance above is acceptable and lets the day proceed to approval without correcting it. This is recorded against your account."
+        confirmLabel="Yes, authorize"
+        confirmVariant="primary"
+        busy={authorizing}
+      />
     </div>
   );
 }

@@ -11,6 +11,8 @@ class TankCreate(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     capacity: Decimal = Field(gt=0)
     safe_fill_limit: Decimal = Field(gt=0)
+    location: str | None = Field(default=None, max_length=200)
+    calibration_reference: str | None = Field(default=None, max_length=500)
 
     @model_validator(mode="after")
     def safe_fill_within_capacity(self) -> "TankCreate":
@@ -22,6 +24,8 @@ class TankCreate(BaseModel):
 class TankUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=100)
     safe_fill_limit: Decimal | None = Field(default=None, gt=0)
+    location: str | None = Field(default=None, max_length=200)
+    calibration_reference: str | None = Field(default=None, max_length=500)
     is_active: bool | None = None
 
 
@@ -33,6 +37,8 @@ class TankRead(BaseModel):
     name: str
     capacity: Decimal
     safe_fill_limit: Decimal
+    location: str | None
+    calibration_reference: str | None
     is_active: bool
     created_at: datetime
     updated_at: datetime

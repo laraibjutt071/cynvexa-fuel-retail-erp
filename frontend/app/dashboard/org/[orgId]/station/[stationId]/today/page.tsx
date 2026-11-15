@@ -17,6 +17,7 @@ import { useAuth } from "@/lib/auth-context";
 import { useLanguage } from "@/lib/i18n/context";
 import { stationDateIso } from "@/lib/date";
 import { Card } from "@/components/Card";
+import { StatCard, StatCardGrid } from "@/components/ui/StatCard";
 import { TankGauge } from "@/components/TankGauge";
 import { FuelStockChart } from "@/components/charts/FuelStockChart";
 import { LitresByGradeChart } from "@/components/charts/LitresByGradeChart";
@@ -190,22 +191,23 @@ export default function TodayOverviewPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-        <SummaryCard icon={Fuel} label={t("today.fuelSoldToday")} value={`${totalLitres} L`} />
-        <SummaryCard icon={ShoppingCart} label={t("today.salesValue")} value={totalSalesValue} hint={t("today.revenueNotProfit")} />
-        <SummaryCard icon={Wallet} label={t("today.collected")} value={totalCollected.toFixed(2)} />
-        <SummaryCard icon={Banknote} label={t("today.expectedCash")} value={expectedCash.toFixed(2)} />
-        <SummaryCard icon={Banknote} label={t("today.actualCash")} value={actualCash.toFixed(2)} />
-        <SummaryCard
+      <StatCardGrid>
+        <StatCard icon={Fuel} label={t("today.fuelSoldToday")} value={`${totalLitres} L`} tone="brand" subtitle={t("today.revenueNotProfit")} />
+        <StatCard icon={ShoppingCart} label={t("today.salesValue")} value={totalSalesValue} tone="success" />
+        <StatCard icon={Wallet} label={t("today.collected")} value={totalCollected.toFixed(2)} tone="brand" />
+        <StatCard
           icon={Banknote}
           label={t("today.shortageExcess")}
           value={shortageExcess.toFixed(2)}
           tone={Math.abs(shortageExcess) < 0.01 ? "neutral" : shortageExcess < 0 ? "danger" : "warning"}
         />
-        <SummaryCard icon={CreditCard} label={t("today.outstandingCredit")} value={outstandingCredit.toFixed(2)} />
-        <SummaryCard icon={CheckSquare} label={t("today.itemsAwaitingApproval")} value={String(pendingCount)} tone={pendingCount > 0 ? "warning" : "neutral"} />
-        <SummaryCard icon={Receipt} label={t("today.transactions")} value={String(transactionsCount)} />
-        <SummaryCard icon={Wallet} label={t("today.avgTransaction")} value={avgTransaction.toFixed(2)} />
+      </StatCardGrid>
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+        <MiniStat label={t("today.expectedCash")} value={expectedCash.toFixed(2)} />
+        <MiniStat label={t("today.actualCash")} value={actualCash.toFixed(2)} />
+        <MiniStat label={t("today.outstandingCredit")} value={outstandingCredit.toFixed(2)} />
+        <MiniStat label={t("today.transactions")} value={String(transactionsCount)} />
+        <MiniStat label={t("today.avgTransaction")} value={avgTransaction.toFixed(2)} />
       </div>
 
       <Card title={t("today.tankLevels")} description={t("today.tankLevelsDescription")}>
@@ -323,28 +325,11 @@ export default function TodayOverviewPage() {
   );
 }
 
-function SummaryCard({
-  icon: Icon,
-  label,
-  value,
-  hint,
-  tone = "neutral",
-}: {
-  icon: typeof Fuel;
-  label: string;
-  value: string;
-  hint?: string;
-  tone?: "neutral" | "warning" | "danger";
-}) {
-  const valueColor = tone === "danger" ? "text-danger-600" : tone === "warning" ? "text-caution-600" : "text-ink";
+function MiniStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="card-glow animate-fade-slide-up rounded-xl bg-surface p-4">
-      <div className="flex items-center gap-2 text-ink-faint">
-        <Icon className="h-4 w-4" aria-hidden />
-        <span className="text-xs font-medium">{label}</span>
-      </div>
-      <p className={`mt-2 text-xl font-semibold ${valueColor}`}>{value}</p>
-      {hint && <p className="mt-0.5 text-xs text-ink-faint">{hint}</p>}
+    <div className="rounded-lg border border-border bg-surface px-4 py-3">
+      <p className="text-xs text-ink-faint">{label}</p>
+      <p className="mt-1 text-lg font-semibold text-ink">{value}</p>
     </div>
   );
 }

@@ -18,6 +18,8 @@ import { Card } from "@/components/Card";
 import { Button } from "@/components/ui/Button";
 import { StatusBadge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { ProgressSteps } from "@/components/ui/ProgressSteps";
+import { ConfirmDialog } from "@/components/ui/Dialog";
 import type { Shift } from "@/lib/types";
 import { ReadingsSection } from "./ReadingsSection";
 import { SalesSection } from "./SalesSection";
@@ -37,6 +39,31 @@ const SECTIONS: { id: Section; labelKey: TranslationKey; helpKey: TranslationKey
   { id: "review", labelKey: "dailyEntry.section.review", helpKey: "dailyEntry.help.review", icon: ClipboardList },
 ];
 
+/**
+ * Real completion, not "the tab was opened" - see Phase 5 Step 3 and
+ * docs/PHASE_5_DAILY_ENTRY_AUDIT.md. Readings count as done only once the
+ * shift has actually been closed (the backend already refuses to close a
+ * shift with any reading missing); Cash counts as done only once a
+ * reconciliation record genuinely exists; Review counts as done only once
+ * the shift is approved. Sales and Expenses have no defined "finished"
+ * state of their own in this business process (entries can be added at
+ * any point before cash closing) - they only read as complete once the
+ * whole day is approved, matching ReviewSection's own checklist, which
+ * never requires a minimum number of sales/expense entries either.
+ */
+function dailyEntryCompletedSteps(shift: Shift | null | "loading", reconciliationExists: boolean): Set<number> {
+  const done = new Set<number>();
+  if (shift === "loading" || shift === null) return done;
+  if (shift.status !== "open") done.add(0); // readings
+  if (reconciliationExists) done.add(3); // cash
+  if (shift.status === "approved") {
+    done.add(1); // sales
+    done.add(2); // expenses
+    done.add(4); // review
+  }
+  return done;
+}
+
 export default function DailyEntryPage() {
   const { orgId, stationId } = useParams<{ orgId: string; stationId: string }>();
   const { authFetch } = useAuth();
@@ -52,8 +79,37 @@ export default function DailyEntryPage() {
   const [businessDate, setBusinessDate] = useState(() => stationDateIso("UTC"));
   const [shift, setShift] = useState<Shift | null | "loading">("loading");
   const [starting, setStarting] = useState(false);
+  // Whether a reconciliation record exists for this shift - the real
+  // signal that the Cash step is actually finished, not just opened.
+  // Fetched once here (not just inside CashSection) so the progress
+  // indicator can reflect genuine completion, per Phase 5 Step 3.
+  const [reconciliationExists, setReconciliationExists] = useState(false);
   const requestedSection = searchParams.get("section") as Section | null;
   const [section, setSection] = useState<Section>(requestedSection ?? "readings");
+  // Whether the currently-open section has typed-but-unsaved input - each
+  // section reports this up via onDirtyChange so we can warn before it's
+  // silently lost (switching tabs unmounts the inactive section; see
+  // docs/PHASE_5_DAILY_ENTRY_AUDIT.md). Not a real autosave - nothing is
+  // persisted here, this only stops the user from losing it by accident.
+  const [isDirty, setIsDirty] = useState(false);
+  const [pendingSection, setPendingSection] = useState<Section | null>(null);
+
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (!isDirty) return;
+      e.preventDefault();
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [isDirty]);
+
+  function requestSectionChange(next: Section) {
+    if (isDirty && next !== section) {
+      setPendingSection(next);
+      return;
+    }
+    setSection(next);
+  }
 
   const shiftsBase = `/organizations/${orgId}/stations/${stationId}/shifts`;
 
@@ -86,7 +142,14 @@ export default function DailyEntryPage() {
     // docs/ASSUMPTIONS.md. If more than one exists for this date (created
     // outside this workspace), the most recently opened one is what
     // "today's entry" means here.
-    setShift(rows.length > 0 ? rows[0] : null);
+    const current = rows.length > 0 ? rows[0] : null;
+    setShift(current);
+    if (current) {
+      const reconResp = await authFetch(`${shiftsBase}/${current.id}/reconciliation`);
+      setReconciliationExists(reconResp.ok);
+    } else {
+      setReconciliationExists(false);
+    }
   }, [authFetch, shiftsBase, businessDate]);
 
   useEffect(() => {
@@ -168,7 +231,11 @@ export default function DailyEntryPage() {
             </div>
           </Card>
 
-          <DailyEntryProgress sections={SECTIONS} current={section} t={t} />
+          <ProgressSteps
+            steps={SECTIONS.map((s) => ({ label: t(s.labelKey) }))}
+            currentStep={SECTIONS.findIndex((s) => s.id === section)}
+            completedSteps={dailyEntryCompletedSteps(shift, reconciliationExists)}
+          />
 
           <div className="flex gap-1 overflow-x-auto rounded-xl border border-border bg-surface p-1" role="tablist">
             {SECTIONS.map((s) => {
@@ -178,7 +245,7 @@ export default function DailyEntryPage() {
                   key={s.id}
                   role="tab"
                   aria-selected={section === s.id}
-                  onClick={() => setSection(s.id)}
+                  onClick={() => requestSectionChange(s.id)}
                   className={`flex flex-shrink-0 items-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium transition-colors ${
                     section === s.id ? "bg-brand-500 text-white" : "text-ink-soft hover:bg-surface-elevated"
                   }`}
@@ -196,60 +263,45 @@ export default function DailyEntryPage() {
 
           <div>
             {section === "readings" && (
-              <ReadingsSection orgId={orgId} stationId={stationId} shift={shift} authFetch={authFetch} onShiftChanged={loadShift} />
+              <ReadingsSection orgId={orgId} stationId={stationId} shift={shift} authFetch={authFetch} onShiftChanged={loadShift} onDirtyChange={setIsDirty} />
             )}
             {section === "sales" && (
-              <SalesSection orgId={orgId} stationId={stationId} shift={shift} authFetch={authFetch} />
+              <SalesSection orgId={orgId} stationId={stationId} shift={shift} authFetch={authFetch} onDirtyChange={setIsDirty} />
             )}
             {section === "expenses" && (
-              <ExpensesSection orgId={orgId} stationId={stationId} businessDate={businessDate} authFetch={authFetch} />
+              <ExpensesSection orgId={orgId} stationId={stationId} businessDate={businessDate} authFetch={authFetch} onDirtyChange={setIsDirty} />
             )}
             {section === "cash" && (
-              <CashSection orgId={orgId} stationId={stationId} shift={shift} authFetch={authFetch} onShiftChanged={loadShift} />
+              <CashSection orgId={orgId} stationId={stationId} shift={shift} authFetch={authFetch} onShiftChanged={loadShift} onDirtyChange={setIsDirty} />
             )}
             {section === "review" && (
               <ReviewSection
                 orgId={orgId}
                 stationId={stationId}
                 shift={shift}
+                businessDate={businessDate}
                 authFetch={authFetch}
                 onShiftChanged={loadShift}
-                goToSection={(s) => setSection(s)}
+                goToSection={(s) => requestSectionChange(s)}
               />
             )}
           </div>
         </>
       )}
-    </div>
-  );
-}
 
-function DailyEntryProgress({
-  sections,
-  current,
-  t,
-}: {
-  sections: { id: Section; labelKey: TranslationKey }[];
-  current: Section;
-  t: (key: TranslationKey) => string;
-}) {
-  const currentIndex = sections.findIndex((s) => s.id === current);
-  return (
-    <div className="space-y-1.5">
-      <p className="text-xs font-medium text-ink-faint">
-        {t("dailyEntry.step")} {currentIndex + 1} {t("dailyEntry.of")} {sections.length} ·{" "}
-        {t(sections[currentIndex].labelKey)}
-      </p>
-      <div className="flex gap-1.5">
-        {sections.map((s, i) => (
-          <div
-            key={s.id}
-            className={`h-1.5 flex-1 rounded-full transition-colors duration-300 ${
-              i <= currentIndex ? "bg-brand-500" : "bg-surface-elevated"
-            }`}
-          />
-        ))}
-      </div>
+      <ConfirmDialog
+        open={pendingSection !== null}
+        onClose={() => setPendingSection(null)}
+        onConfirm={() => {
+          setIsDirty(false);
+          setSection(pendingSection!);
+          setPendingSection(null);
+        }}
+        title="Leave without saving?"
+        description="You've typed a value in this step that hasn't been saved yet. Switching tabs will lose it. Save it first, or continue and lose it."
+        confirmLabel="Continue without saving"
+        confirmVariant="danger"
+      />
     </div>
   );
 }

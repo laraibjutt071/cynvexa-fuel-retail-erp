@@ -3,7 +3,7 @@ from datetime import date, datetime, time, timezone
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.common import get_organization_or_404, get_station_or_404
@@ -11,7 +11,7 @@ from app.api.deps import get_db, require_permission
 from app.core.csv_export import csv_response
 from app.core.fuel_grade_lookup import get_fuel_grades_by_id
 from app.core.inventory import get_inventory_stock
-from app.core.permission_codes import REPORT_READ
+from app.core.permission_codes import REPORT_READ, SUPPLIER_LEDGER_READ
 from app.core.permissions import get_station_visibility_scope
 from app.core.reconciliation import get_total_tender_amount
 from app.core.revenue import compute_expected_fuel_revenue_by_grade
@@ -24,15 +24,25 @@ from app.models.shift_cash_movement import DECREASING_CASH_MOVEMENT_TYPES, Shift
 from app.models.shift_nozzle_reading import ShiftNozzleReading
 from app.models.shift_reconciliation import ShiftReconciliation
 from app.models.stock_ledger_entry import StockLedgerEntry, StockMovementType
+from app.models.supplier import Supplier
+from app.models.supplier_invoice import SupplierInvoice
 from app.models.supplier_payment import SupplierPayment
 from app.models.tank import Tank
 from app.models.tanker_receipt import ReceiptStatus, TankerReceipt
 from app.models.user import User
+from app.models.fuel_grade import FuelGrade
+from app.models.fuel_price import FuelPrice
 from app.schemas.reports import (
     DailyFuelSalesDay,
     DailyFuelSalesGradeRow,
+    ExpenseSummaryReport,
+    ExpenseSummaryRow,
+    InventoryStockRow,
     PendingApprovalsReport,
+    PriceChangeHistoryRow,
     ShiftReconciliationReportRow,
+    SupplierLedgerStatement,
+    SupplierLedgerStatementEntry,
     TankVarianceReportRow,
 )
 
@@ -473,4 +483,308 @@ async def pending_approvals_report(
         pending_expenses=pending_expenses,
         unapproved_supplier_payments=unapproved_payments,
         low_stock_inventory_items=low_stock,
+    )
+
+
+@router.get("/expense-summary", response_model=ExpenseSummaryReport)
+async def expense_summary_report(
+    organization_id: uuid.UUID,
+    station_id: uuid.UUID,
+    date_from: date = Query(...),
+    date_to: date = Query(...),
+    current_user: User = Depends(require_permission(REPORT_READ)),
+    db: AsyncSession = Depends(get_db),
+) -> ExpenseSummaryReport:
+    await get_station_or_404(db, organization_id, station_id)
+    _validate_date_range(date_from, date_to)
+    result = await db.execute(
+        select(Expense).where(
+            Expense.organization_id == organization_id,
+            (Expense.station_id == station_id) | Expense.station_id.is_(None),
+            Expense.expense_date >= date_from,
+            Expense.expense_date <= date_to,
+        )
+    )
+    expenses = result.scalars().all()
+    by_cat: dict[str, dict] = {}
+    for e in expenses:
+        bucket = by_cat.setdefault(e.category, {
+            "total": Decimal(0), "approved": Decimal(0),
+            "pending": Decimal(0), "rejected": Decimal(0), "count": 0,
+        })
+        bucket["total"] += e.amount
+        bucket["count"] += 1
+        if e.reversed_at is not None:
+            pass
+        elif e.status == ExpenseStatus.APPROVED.value:
+            bucket["approved"] += e.amount
+        elif e.status == ExpenseStatus.PENDING.value:
+            bucket["pending"] += e.amount
+        elif e.status == ExpenseStatus.REJECTED.value:
+            bucket["rejected"] += e.amount
+    rows = [
+        ExpenseSummaryRow(
+            category=cat, total_amount=v["total"], approved_amount=v["approved"],
+            pending_amount=v["pending"], rejected_amount=v["rejected"], count=v["count"],
+        )
+        for cat, v in sorted(by_cat.items())
+    ]
+    grand_total = sum((r.total_amount for r in rows), Decimal(0))
+    grand_approved = sum((r.approved_amount for r in rows), Decimal(0))
+    return ExpenseSummaryReport(
+        date_from=date_from, date_to=date_to, rows=rows,
+        grand_total=grand_total, grand_approved=grand_approved,
+    )
+
+
+@router.get("/expense-summary/export")
+async def export_expense_summary_report(
+    organization_id: uuid.UUID,
+    station_id: uuid.UUID,
+    date_from: date = Query(...),
+    date_to: date = Query(...),
+    current_user: User = Depends(require_permission(REPORT_READ)),
+    db: AsyncSession = Depends(get_db),
+):
+    report = await expense_summary_report(
+        organization_id, station_id, date_from, date_to,
+        current_user=current_user, db=db,
+    )
+    csv_rows = [
+        {
+            "category": r.category,
+            "total_amount": str(r.total_amount),
+            "approved_amount": str(r.approved_amount),
+            "pending_amount": str(r.pending_amount),
+            "rejected_amount": str(r.rejected_amount),
+            "count": r.count,
+        }
+        for r in report.rows
+    ]
+    return csv_response(
+        "expense-summary.csv",
+        ["category", "total_amount", "approved_amount", "pending_amount", "rejected_amount", "count"],
+        csv_rows,
+    )
+
+
+@router.get("/inventory-stock", response_model=list[InventoryStockRow])
+async def inventory_stock_report(
+    organization_id: uuid.UUID,
+    station_id: uuid.UUID,
+    current_user: User = Depends(require_permission(REPORT_READ)),
+    db: AsyncSession = Depends(get_db),
+) -> list[InventoryStockRow]:
+    await get_station_or_404(db, organization_id, station_id)
+    items = (
+        await db.execute(
+            select(InventoryItem).where(
+                InventoryItem.station_id == station_id,
+                InventoryItem.is_active.is_(True),
+            ).order_by(InventoryItem.name)
+        )
+    ).scalars().all()
+    rows = []
+    for item in items:
+        on_hand = await get_inventory_stock(db, item.id)
+        rows.append(InventoryStockRow(
+            inventory_item_id=item.id, sku=item.sku, name=item.name,
+            unit=item.unit, on_hand=on_hand, reorder_level=item.reorder_level,
+            is_below_reorder=on_hand < item.reorder_level,
+        ))
+    return rows
+
+
+@router.get("/inventory-stock/export")
+async def export_inventory_stock_report(
+    organization_id: uuid.UUID,
+    station_id: uuid.UUID,
+    current_user: User = Depends(require_permission(REPORT_READ)),
+    db: AsyncSession = Depends(get_db),
+):
+    rows = await inventory_stock_report(
+        organization_id, station_id, current_user=current_user, db=db,
+    )
+    csv_rows = [
+        {
+            "sku": r.sku, "name": r.name, "unit": r.unit,
+            "on_hand": str(r.on_hand), "reorder_level": str(r.reorder_level),
+            "is_below_reorder": r.is_below_reorder,
+        }
+        for r in rows
+    ]
+    return csv_response(
+        "inventory-stock.csv",
+        ["sku", "name", "unit", "on_hand", "reorder_level", "is_below_reorder"],
+        csv_rows,
+    )
+
+
+@router.get("/price-change-history", response_model=list[PriceChangeHistoryRow])
+async def price_change_history_report(
+    organization_id: uuid.UUID,
+    station_id: uuid.UUID,
+    date_from: date = Query(...),
+    date_to: date = Query(...),
+    current_user: User = Depends(require_permission(REPORT_READ)),
+    db: AsyncSession = Depends(get_db),
+) -> list[PriceChangeHistoryRow]:
+    await get_station_or_404(db, organization_id, station_id)
+    _validate_date_range(date_from, date_to)
+    start = datetime.combine(date_from, time.min, tzinfo=timezone.utc)
+    end = datetime.combine(date_to, time.max, tzinfo=timezone.utc)
+    result = await db.execute(
+        select(FuelPrice, FuelGrade)
+        .join(FuelGrade, FuelGrade.id == FuelPrice.fuel_grade_id)
+        .where(
+            FuelPrice.station_id == station_id,
+            FuelPrice.effective_from >= start,
+            FuelPrice.effective_from <= end,
+        )
+        .order_by(FuelPrice.effective_from.desc())
+    )
+    all_prices = result.all()
+    rows: list[PriceChangeHistoryRow] = []
+    for price, grade in all_prices:
+        prev = (
+            await db.execute(
+                select(FuelPrice.price_per_litre)
+                .where(
+                    FuelPrice.station_id == station_id,
+                    FuelPrice.fuel_grade_id == price.fuel_grade_id,
+                    FuelPrice.effective_from < price.effective_from,
+                )
+                .order_by(FuelPrice.effective_from.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        rows.append(PriceChangeHistoryRow(
+            fuel_grade_id=grade.id, fuel_grade_name=grade.name,
+            price_per_litre=price.price_per_litre,
+            effective_from=price.effective_from, previous_price=prev,
+        ))
+    return rows
+
+
+@router.get("/price-change-history/export")
+async def export_price_change_history_report(
+    organization_id: uuid.UUID,
+    station_id: uuid.UUID,
+    date_from: date = Query(...),
+    date_to: date = Query(...),
+    current_user: User = Depends(require_permission(REPORT_READ)),
+    db: AsyncSession = Depends(get_db),
+):
+    rows = await price_change_history_report(
+        organization_id, station_id, date_from, date_to,
+        current_user=current_user, db=db,
+    )
+    csv_rows = [
+        {
+            "fuel_grade": r.fuel_grade_name,
+            "price_per_litre": str(r.price_per_litre),
+            "effective_from": r.effective_from.isoformat(),
+            "previous_price": str(r.previous_price) if r.previous_price else "",
+        }
+        for r in rows
+    ]
+    return csv_response(
+        "price-change-history.csv",
+        ["fuel_grade", "price_per_litre", "effective_from", "previous_price"],
+        csv_rows,
+    )
+
+
+supplier_report_router = APIRouter(
+    prefix="/organizations/{organization_id}/suppliers/{supplier_id}",
+    tags=["reports"],
+)
+
+
+@supplier_report_router.get("/statement", response_model=SupplierLedgerStatement)
+async def supplier_ledger_statement(
+    organization_id: uuid.UUID,
+    supplier_id: uuid.UUID,
+    date_from: date = Query(...),
+    date_to: date = Query(...),
+    current_user: User = Depends(require_permission(SUPPLIER_LEDGER_READ)),
+    db: AsyncSession = Depends(get_db),
+) -> SupplierLedgerStatement:
+    await get_organization_or_404(db, organization_id)
+    _validate_date_range(date_from, date_to)
+    supplier = (
+        await db.execute(
+            select(Supplier).where(
+                Supplier.id == supplier_id,
+                Supplier.organization_id == organization_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if supplier is None:
+        from app.exceptions import NotFoundError
+        raise NotFoundError("Supplier not found.")
+
+    pre_invoiced = (
+        await db.execute(
+            select(func.coalesce(func.sum(SupplierInvoice.amount), 0)).where(
+                SupplierInvoice.supplier_id == supplier_id,
+                SupplierInvoice.invoice_date < date_from,
+            )
+        )
+    ).scalar_one()
+    pre_paid = (
+        await db.execute(
+            select(func.coalesce(func.sum(SupplierPayment.amount), 0)).where(
+                SupplierPayment.supplier_id == supplier_id,
+                SupplierPayment.payment_date < date_from,
+                SupplierPayment.approved_by_user_id.is_not(None),
+                SupplierPayment.reversed_at.is_(None),
+            )
+        )
+    ).scalar_one()
+    opening_balance = Decimal(pre_invoiced) - Decimal(pre_paid)
+
+    invoices = (
+        await db.execute(
+            select(SupplierInvoice).where(
+                SupplierInvoice.supplier_id == supplier_id,
+                SupplierInvoice.invoice_date >= date_from,
+                SupplierInvoice.invoice_date <= date_to,
+            ).order_by(SupplierInvoice.invoice_date)
+        )
+    ).scalars().all()
+    payments = (
+        await db.execute(
+            select(SupplierPayment).where(
+                SupplierPayment.supplier_id == supplier_id,
+                SupplierPayment.payment_date >= date_from,
+                SupplierPayment.payment_date <= date_to,
+                SupplierPayment.approved_by_user_id.is_not(None),
+                SupplierPayment.reversed_at.is_(None),
+            ).order_by(SupplierPayment.payment_date)
+        )
+    ).scalars().all()
+
+    entries: list[tuple[date, str, str | None, str | None, Decimal]] = []
+    for inv in invoices:
+        entries.append((inv.invoice_date, "invoice", inv.reference, inv.description, inv.amount))
+    for pay in payments:
+        entries.append((pay.payment_date, "payment", pay.reference, None, -pay.amount))
+    entries.sort(key=lambda e: e[0])
+
+    running = opening_balance
+    statement_entries = []
+    for entry_date, entry_type, ref, desc, amount in entries:
+        running += amount
+        statement_entries.append(SupplierLedgerStatementEntry(
+            entry_date=entry_date, entry_type=entry_type,
+            reference=ref, description=desc, amount=amount,
+            running_balance=running,
+        ))
+
+    return SupplierLedgerStatement(
+        supplier_id=supplier_id, supplier_name=supplier.name,
+        date_from=date_from, date_to=date_to,
+        opening_balance=opening_balance,
+        entries=statement_entries, closing_balance=running,
     )

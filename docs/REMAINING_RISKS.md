@@ -72,3 +72,21 @@ Deliberately not built this pass - triaged, not missed:
 - **Revenue-by-payment-method chart** - no report endpoint aggregates tenders by payment method across a date range yet; flagged rather than built as an ad-hoc N+1 fetch across every shift in range.
 - **Translating the older Phase-6 report tabs** (org/station dashboard's Suppliers/Credit/Audit/Expenses/Reports tabs) - the Daily Entry workflow and main nav were prioritized as the higher-traffic, non-technical-user-facing surface.
 - **Onboarding tour, draft/autosave on Daily Entry forms, a dedicated WCAG audit** - same honest gaps as before, not newly claimed as done.
+
+## Pilot Day 2 — Reading Corrections, Credit Customer Enhancement (2026-11-14)
+
+### New risks introduced
+
+1. **Backend tests not executed against a real database this session.** All 12 reading-correction tests and the existing suite compile and are syntactically correct, but no PostgreSQL instance was available locally (Windows dev machine, no Docker Postgres running). The tests use `unittest.mock.patch` to control time (not real waiting), which is the correct pattern, but they have not been run end-to-end against a real database. **Priority: HIGH — run the full suite against a real Postgres before pilot launch.**
+
+2. **No e2e (Playwright) tests for the three new frontend pages** (reading corrections, tank management, credit customers). The pages build clean and follow established component patterns, but no automated browser test exercises them. The existing 7 Playwright tests cover other workflows. **Priority: MEDIUM — add at minimum a smoke test for each page.**
+
+3. **Credit limit enforcement has no override mechanism.** When a customer's credit limit is reached, the tender is rejected with a 422. There is no "authorized override" path for a manager to approve a sale that exceeds the limit — the message suggests one exists ("Use an authorized override if this sale must proceed") but no such endpoint is built. For the pilot, the workaround is to temporarily increase the customer's credit limit. **Priority: LOW for pilot — the message should be softened or the override built.**
+
+4. **Ageing calculation is in-memory, not a database query.** `list_credit_customer_ageing` loads all tenders and payments for each active customer into Python and does FIFO allocation in a loop. This is correct and simple for pilot scale (dozens of customers, hundreds of tenders) but will not scale to thousands of customers with years of history. **Priority: LOW for pilot — revisit if performance degrades.**
+
+### Risks narrowed or closed by Day 2
+
+- **`docs/ASSUMPTIONS.md` #18 (no correction path for readings):** CLOSED. The 24-hour correction policy provides a formal, audited correction path for both within-window and post-lock scenarios.
+- **`docs/ASSUMPTIONS.md` #22 (credit customer is a minimal stub):** NARROWED. Credit limits, contact details, statements, and ageing are now functional. Per-customer product restrictions and credit-sale authorization escalation remain open.
+- **Reading FK safety:** CASCADE→RESTRICT prevents accidental data loss from shift deletion propagating to readings.

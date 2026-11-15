@@ -109,7 +109,32 @@ export interface Station {
   name: string;
   code: string;
   address: string | null;
+  phone: string | null;
+  email: string | null;
   timezone: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ExpenseCategory {
+  id: string;
+  organization_id: string;
+  name: string;
+  description: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ShiftTemplate {
+  id: string;
+  organization_id: string;
+  station_id: string;
+  name: string;
+  start_time: string;
+  end_time: string;
+  grace_period_minutes: number;
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -282,7 +307,31 @@ export interface ShiftNozzleReading {
   closing_recorded_at: string | null;
   dispensed_litres: string | null;
   meter_event_type: string | null;
+  meter_event_pre_reading: string | null;
+  meter_event_post_reading: string | null;
+  meter_event_notes: string | null;
   meter_event_approved_by_user_id: string | null;
+  meter_event_approved_at: string | null;
+}
+
+export interface Dispenser {
+  id: string;
+  station_id: string;
+  code: string;
+  name: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Nozzle {
+  id: string;
+  dispenser_id: string;
+  tank_id: string;
+  code: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface NozzleOverview {
@@ -306,6 +355,8 @@ export interface Tank {
   name: string;
   capacity: string;
   safe_fill_limit: string;
+  location: string | null;
+  calibration_reference: string | null;
   is_active: boolean;
   book_stock: string;
   safe_capacity_available: string;
@@ -342,7 +393,70 @@ export interface CreditCustomer {
   id: string;
   organization_id: string;
   name: string;
+  phone: string | null;
+  contact_person: string | null;
+  credit_limit: string | null;
+  payment_terms_days: number | null;
+  address: string | null;
+  notes: string | null;
   is_active: boolean;
+}
+
+export interface CreditCustomerBalanceDetail {
+  credit_customer_id: string;
+  credit_customer_name: string;
+  balance: string;
+  credit_limit: string | null;
+}
+
+export interface CreditCustomerStatementEntry {
+  date: string;
+  description: string;
+  debit: string;
+  credit: string;
+  running_balance: string;
+}
+
+export interface CreditCustomerStatement {
+  credit_customer_id: string;
+  credit_customer_name: string;
+  opening_balance: string;
+  entries: CreditCustomerStatementEntry[];
+  closing_balance: string;
+}
+
+export interface CreditCustomerAgeingEntry {
+  credit_customer_id: string;
+  credit_customer_name: string;
+  current: string;
+  days_30: string;
+  days_60: string;
+  days_90: string;
+  over_90: string;
+  total: string;
+}
+
+export type ReadingCorrectionStatus = "pending" | "approved" | "rejected";
+
+export interface ReadingCorrection {
+  id: string;
+  organization_id: string;
+  station_id: string;
+  shift_id: string;
+  reading_type: string;
+  tank_reading_id: string | null;
+  nozzle_reading_id: string | null;
+  original_value: string;
+  corrected_value: string;
+  reason: string;
+  original_submitted_at: string;
+  is_post_lock: boolean;
+  status: ReadingCorrectionStatus;
+  requested_by_user_id: string;
+  requested_at: string;
+  decided_by_user_id: string | null;
+  decided_at: string | null;
+  rejection_reason: string | null;
 }
 
 export interface ShiftTender {
@@ -431,4 +545,58 @@ export interface Supplier {
   organization_id: string;
   name: string;
   is_active: boolean;
+}
+
+export interface AttendanceRecord {
+  id: string;
+  organization_id: string;
+  station_id: string;
+  user_id: string;
+  attendance_date: string;
+  status: string;
+  check_in_time: string | null;
+  check_out_time: string | null;
+  source: string;
+  notes: string | null;
+  recorded_by_user_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PayrollRule {
+  id: string;
+  organization_id: string;
+  station_id: string;
+  rule_name: string;
+  shift_start_time: string;
+  late_threshold_minutes: number;
+  half_day_threshold_minutes: number;
+  late_deduction_amount: string;
+  absent_deduction_amount: string;
+  half_day_deduction_amount: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SalaryRecord {
+  id: string;
+  organization_id: string;
+  station_id: string;
+  user_id: string;
+  period_start: string;
+  period_end: string;
+  base_salary: string;
+  total_deductions: string;
+  net_salary: string;
+  days_present: number;
+  days_absent: number;
+  days_late: number;
+  days_half_day: number;
+  days_leave: number;
+  notes: string | null;
+  generated_by_user_id: string;
+  is_finalized: boolean;
+  created_at: string;
+  updated_at: string;
 }

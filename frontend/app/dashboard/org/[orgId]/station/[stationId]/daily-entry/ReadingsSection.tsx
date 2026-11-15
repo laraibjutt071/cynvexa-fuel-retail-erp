@@ -1,12 +1,15 @@
 "use client";
 
 import { AlertTriangle } from "lucide-react";
+import { formatLitres } from "@/lib/format";
 import { useCallback, useEffect, useState } from "react";
 import { useLanguage } from "@/lib/i18n/context";
 import { useToast } from "@/components/ui/Toast";
 import { Card } from "@/components/Card";
 import { Button } from "@/components/ui/Button";
 import { TextInput } from "@/components/ui/Field";
+import { ConfirmDialog } from "@/components/ui/Dialog";
+import { usePermissions } from "@/lib/permissions";
 import type { NozzleOverview, Shift, ShiftNozzleReading, ShiftTankReading, Tank } from "@/lib/types";
 import type { AuthFetch } from "./page";
 
@@ -16,15 +19,21 @@ export function ReadingsSection({
   shift,
   authFetch,
   onShiftChanged,
+  onDirtyChange,
 }: {
   orgId: string;
   stationId: string;
   shift: Shift;
   authFetch: AuthFetch;
   onShiftChanged: () => void;
+  onDirtyChange: (dirty: boolean) => void;
 }) {
   const { notify } = useToast();
   const { t } = useLanguage();
+  const { can } = usePermissions(orgId, stationId);
+  const canOpen = can("shift:open");
+  const canClose = can("shift:close");
+  const [closeConfirmOpen, setCloseConfirmOpen] = useState(false);
   const [tanks, setTanks] = useState<Tank[] | null>(null);
   const [nozzles, setNozzles] = useState<NozzleOverview[] | null>(null);
   const [tankReadings, setTankReadings] = useState<ShiftTankReading[]>([]);
@@ -32,6 +41,13 @@ export function ReadingsSection({
   const [tankDipInputs, setTankDipInputs] = useState<Record<string, string>>({});
   const [nozzleInputs, setNozzleInputs] = useState<Record<string, string>>({});
   const [busyKey, setBusyKey] = useState<string | null>(null);
+
+  useEffect(() => {
+    const hasUnsaved =
+      Object.values(tankDipInputs).some((v) => v.trim() !== "") ||
+      Object.values(nozzleInputs).some((v) => v.trim() !== "");
+    onDirtyChange(hasUnsaved);
+  }, [tankDipInputs, nozzleInputs, onDirtyChange]);
 
   const shiftBase = `/organizations/${orgId}/stations/${stationId}/shifts/${shift.id}`;
   const readOnly = shift.status !== "open";
@@ -69,6 +85,7 @@ export function ReadingsSection({
         return;
       }
       notify("success", `${kind === "opening" ? "Opening" : "Closing"} dip saved.`);
+      setTankDipInputs((prev) => { const next = { ...prev }; delete next[`${tankId}:${kind}`]; return next; });
       await load();
     } finally {
       setBusyKey(null);
@@ -90,6 +107,7 @@ export function ReadingsSection({
         return;
       }
       notify("success", "Opening reading saved.");
+      setNozzleInputs((prev) => { const next = { ...prev }; delete next[`${nozzleId}:open`]; return next; });
       await load();
     } finally {
       setBusyKey(null);
@@ -111,6 +129,7 @@ export function ReadingsSection({
         return;
       }
       notify("success", "Closing reading saved - litres sold calculated automatically.");
+      setNozzleInputs((prev) => { const next = { ...prev }; delete next[`${nozzleId}:close`]; return next; });
       await load();
     } finally {
       setBusyKey(null);
@@ -149,15 +168,20 @@ export function ReadingsSection({
                     <td className="py-2 pr-2 text-ink-soft">{tank.book_stock}</td>
                     <td className="py-2 pr-2">
                       {opening ? (
-                        <span className="text-ink">{opening.dip_reading}</span>
+                        <span className="text-ink tabular-nums">{formatLitres(opening.dip_reading)}</span>
                       ) : readOnly ? (
                         <span className="text-ink-faint">{t("readings.notRecorded")}</span>
+                      ) : !canOpen ? (
+                        <span className="text-ink-faint">Waiting for an authorized user to record this</span>
                       ) : (
                         <div className="flex items-center gap-2">
                           <TextInput
                             type="number"
                             step="0.001"
-                            placeholder="Opening dip"
+                            min="0"
+                            required
+                            aria-label={`Opening dip for tank ${tank.code} (required, litres)`}
+                            placeholder="Opening dip (L) *"
                             className="w-32"
                             value={tankDipInputs[`${tank.id}:opening`] ?? ""}
                             onChange={(e) =>
@@ -179,15 +203,20 @@ export function ReadingsSection({
                       {!opening ? (
                         <span className="text-ink-faint">{t("readings.recordOpeningFirst")}</span>
                       ) : closing ? (
-                        <span className="text-ink">{closing.dip_reading}</span>
+                        <span className="text-ink tabular-nums">{formatLitres(closing.dip_reading)}</span>
                       ) : readOnly ? (
                         <span className="text-ink-faint">{t("readings.notRecorded")}</span>
+                      ) : !canClose ? (
+                        <span className="text-ink-faint">Waiting for an authorized user to record this</span>
                       ) : (
                         <div className="flex items-center gap-2">
                           <TextInput
                             type="number"
                             step="0.001"
-                            placeholder="Closing dip"
+                            min="0"
+                            required
+                            aria-label={`Closing dip for tank ${tank.code} (required, litres)`}
+                            placeholder="Closing dip (L) *"
                             className="w-32"
                             value={tankDipInputs[`${tank.id}:closing`] ?? ""}
                             onChange={(e) =>
@@ -237,7 +266,7 @@ export function ReadingsSection({
                     </div>
                     {reading?.dispensed_litres && (
                       <span className="rounded-full bg-brand-50 px-2.5 py-0.5 text-xs font-medium text-accent">
-                        {reading.dispensed_litres} L {t("readings.litresSoldToday")}
+                        {formatLitres(reading.dispensed_litres)} {t("readings.litresSoldToday")}
                       </span>
                     )}
                   </div>
@@ -249,12 +278,17 @@ export function ReadingsSection({
                         <p className="text-sm text-ink">{reading.opening_totalizer}</p>
                       ) : readOnly ? (
                         <p className="text-sm text-ink-faint">{t("readings.notRecorded")}</p>
+                      ) : !canOpen ? (
+                        <p className="text-sm text-ink-faint">Waiting for an authorized user to record this</p>
                       ) : (
                         <div className="flex items-center gap-2">
                           <TextInput
                             type="number"
                             step="0.001"
-                            placeholder="Opening totalizer"
+                            min="0"
+                            required
+                            aria-label={`Opening totalizer for ${n.dispenser_code}/${n.nozzle_code} (required)`}
+                            placeholder="Opening totalizer *"
                             className="w-36"
                             value={nozzleInputs[`${n.nozzle_id}:open`] ?? suggestedOpening}
                             onChange={(e) =>
@@ -280,12 +314,17 @@ export function ReadingsSection({
                         <p className="text-sm text-ink">{reading.closing_totalizer}</p>
                       ) : readOnly ? (
                         <p className="text-sm text-ink-faint">{t("readings.notRecorded")}</p>
+                      ) : !canClose ? (
+                        <p className="text-sm text-ink-faint">Waiting for an authorized user to record this</p>
                       ) : (
                         <div className="flex items-center gap-2">
                           <TextInput
                             type="number"
                             step="0.001"
-                            placeholder="Closing totalizer"
+                            min="0"
+                            required
+                            aria-label={`Closing totalizer for ${n.dispenser_code}/${n.nozzle_code} (required)`}
+                            placeholder="Closing totalizer *"
                             className="w-36"
                             value={nozzleInputs[`${n.nozzle_id}:close`] ?? ""}
                             onChange={(e) =>
@@ -318,29 +357,40 @@ export function ReadingsSection({
         )}
       </Card>
 
-      {shift.status === "open" && (
+      {shift.status === "open" && canClose && (
         <Card title={t("readings.finishedTitle")}>
           <p className="mb-3 text-sm text-ink-soft">{t("readings.finishedHelp")}</p>
-          <Button
-            variant="secondary"
-            onClick={async () => {
-              setBusyKey("close-shift");
-              const resp = await authFetch(`${shiftBase}/close`, { method: "PATCH" });
-              if (!resp.ok) {
-                const body = await resp.json().catch(() => ({ detail: "Could not close the shift yet." }));
-                notify("error", body.detail ?? "Could not close the shift yet.");
-              } else {
-                notify("success", t("readings.closingSaved"));
-                onShiftChanged();
-              }
-              setBusyKey(null);
-            }}
-            busy={busyKey === "close-shift"}
-          >
+          <Button variant="secondary" onClick={() => setCloseConfirmOpen(true)} busy={busyKey === "close-shift"}>
             {t("readings.closeReadings")}
           </Button>
         </Card>
       )}
+
+      <ConfirmDialog
+        open={closeConfirmOpen}
+        onClose={() => setCloseConfirmOpen(false)}
+        onConfirm={async () => {
+          setBusyKey("close-shift");
+          try {
+            const resp = await authFetch(`${shiftBase}/close`, { method: "PATCH" });
+            if (!resp.ok) {
+              const body = await resp.json().catch(() => ({ detail: "Could not close the shift yet." }));
+              notify("error", body.detail ?? "Could not close the shift yet.");
+              return;
+            }
+            notify("success", t("readings.closingSaved"));
+            setCloseConfirmOpen(false);
+            onShiftChanged();
+          } finally {
+            setBusyKey(null);
+          }
+        }}
+        title="Close today's readings?"
+        description="No more tank dips or nozzle totalizers can be recorded for today after this. Make sure every tank and nozzle above has both an opening and closing reading first."
+        confirmLabel="Yes, close readings"
+        confirmVariant="primary"
+        busy={busyKey === "close-shift"}
+      />
     </div>
   );
 }

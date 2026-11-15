@@ -297,13 +297,116 @@ export default async function globalSetup() {
     }
   );
 
+  // A third station, dedicated to Phase 5's role-based Daily Entry tests
+  // (e2e/daily-entry-roles.spec.ts) - station 2 above is already used by
+  // the pre-existing full-workflow test (e2e/daily-entry.spec.ts), which
+  // starts and closes "today's" shift there; sharing it with the
+  // role-based tests would race on the same one-shift-per-day slot.
+  const station3 = await json<{ id: string }>(`${API_BASE}/organizations/${org.id}/stations`, {
+    method: "POST",
+    headers: adminAuth,
+    body: JSON.stringify({ name: "E2E Station 3", code: `E2E3-${RUN_ID}` }),
+  });
+  const fuelGrade3 = await json<{ id: string }>(`${API_BASE}/organizations/${org.id}/fuel-grades`, {
+    method: "POST",
+    headers: adminAuth,
+    body: JSON.stringify({ name: "E2E Kerosene", code: `EK${RUN_ID.slice(-4)}` }),
+  });
+  const tank3 = await json<{ id: string }>(`${API_BASE}/organizations/${org.id}/stations/${station3.id}/tanks`, {
+    method: "POST",
+    headers: adminAuth,
+    body: JSON.stringify({
+      code: "T1",
+      name: "Tank 1",
+      fuel_grade_id: fuelGrade3.id,
+      capacity: "20000",
+      safe_fill_limit: "18000",
+    }),
+  });
+  const dispenser3 = await json<{ id: string }>(
+    `${API_BASE}/organizations/${org.id}/stations/${station3.id}/dispensers`,
+    { method: "POST", headers: adminAuth, body: JSON.stringify({ code: "D1", name: "Dispenser 1" }) }
+  );
+  await json(`${API_BASE}/organizations/${org.id}/stations/${station3.id}/dispensers/${dispenser3.id}/nozzles`, {
+    method: "POST",
+    headers: adminAuth,
+    body: JSON.stringify({ code: "N1", tank_id: tank3.id }),
+  });
+  await json(`${API_BASE}/organizations/${org.id}/stations/${station3.id}/fuel-prices`, {
+    method: "POST",
+    headers: adminAuth,
+    body: JSON.stringify({
+      fuel_grade_id: fuelGrade3.id,
+      price_per_litre: "280.00",
+      effective_from: "2020-01-01T00:00:00Z",
+    }),
+  });
+
+  // Real, non-superuser, role-scoped users - the pre-existing "owner" above
+  // is actually a second superuser (a login convenience), which bypasses
+  // every permission check and so never exercises real RBAC. These seven
+  // users are created through the real API (POST .../users, then POST
+  // .../users/{id}/roles), the same way an Owner would invite staff in
+  // production, so frontend permission-gating tests see real role data.
+  const roles = await json<{ id: string; name: string }[]>(`${API_BASE}/roles`, { headers: adminAuth });
+  const roleId = (name: string) => {
+    const role = roles.find((r) => r.name === name);
+    if (!role) throw new Error(`Seed role "${name}" not found - was permissions-roles seeded?`);
+    return role.id;
+  };
+
+  const ROLE_PASSWORD = "E2eRolePass!23";
+  async function createRoleUser(roleName: string, stationScoped: boolean): Promise<{ email: string; password: string }> {
+    const slug = roleName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+    const email = `e2e-role-${slug}-${RUN_ID}@e2e-dev.com`;
+    const created = await json<{ id: string }>(`${API_BASE}/organizations/${org.id}/users`, {
+      method: "POST",
+      headers: adminAuth,
+      body: JSON.stringify({ email, full_name: `E2E ${roleName}`, password: ROLE_PASSWORD }),
+    });
+    await json(`${API_BASE}/organizations/${org.id}/users/${created.id}/roles`, {
+      method: "POST",
+      headers: adminAuth,
+      body: JSON.stringify({ role_id: roleId(roleName), station_id: stationScoped ? station.id : null }),
+    });
+    if (stationScoped) {
+      // Also grant the same role at station 3 - the station dedicated to
+      // Phase 5's role-based Daily Entry tests (see station3's own
+      // comment above for why not station 1 or 2).
+      await json(`${API_BASE}/organizations/${org.id}/users/${created.id}/roles`, {
+        method: "POST",
+        headers: adminAuth,
+        body: JSON.stringify({ role_id: roleId(roleName), station_id: station3.id }),
+      });
+    }
+    return { email, password: ROLE_PASSWORD };
+  }
+
+  const realOwner = await createRoleUser("Owner", false);
+  const stationManager = await createRoleUser("Station Manager", true);
+  const shiftSupervisor = await createRoleUser("Shift Supervisor", true);
+  const cashier = await createRoleUser("Cashier / Operator", true);
+  const accountant = await createRoleUser("Accountant", true);
+  const storekeeper = await createRoleUser("Storekeeper / Technician", true);
+  const auditor = await createRoleUser("Auditor / Viewer", true);
+
   const state = {
     ownerEmail: OWNER_EMAIL,
     ownerPassword: OWNER_PASSWORD,
     orgId: org.id,
     stationId: station.id,
     stationId2: station2.id,
+    stationId3: station3.id,
     inventoryItemId: inventoryItem.id,
+    roles: {
+      owner: realOwner,
+      stationManager,
+      shiftSupervisor,
+      cashier,
+      accountant,
+      storekeeper,
+      auditor,
+    },
   };
   writeFileSync(path.join(__dirname, ".e2e-state.json"), JSON.stringify(state, null, 2));
 }

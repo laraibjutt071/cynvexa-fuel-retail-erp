@@ -25,9 +25,11 @@ export const translations = {
   "nav.purchases": { en: "Purchases", ur: "Kharidari" },
   "nav.reconciliation": { en: "Reconciliation", ur: "Hisaab Milan" },
   "nav.reports": { en: "Reports", ur: "Reports" },
+  "nav.attendance": { en: "Attendance", ur: "Hazri" },
   "nav.approvals": { en: "Approvals", ur: "Manzoori" },
   "nav.alerts": { en: "Alerts", ur: "Alerts" },
   "nav.auditHistory": { en: "Audit History", ur: "Audit History" },
+  "nav.stationSettings": { en: "Station Config", ur: "Station Config" },
   "nav.usersSettings": { en: "Users & Settings", ur: "Users aur Settings" },
   "nav.signOut": { en: "Sign out", ur: "Sign out Karein" },
 
@@ -59,6 +61,16 @@ export const translations = {
   "login.signIn": { en: "Sign in", ur: "Sign in Karein" },
   "login.signingIn": { en: "Signing in…", ur: "Sign in ho raha hai…" },
   "login.noAccount": { en: "New station? Create an account", ur: "Naya Station? Account Banayein" },
+  "login.welcomeBack": { en: "Welcome back", ur: "Khush Amdeed" },
+  "login.heroTitle": { en: "Run every pump, tank, and shift with confidence.", ur: "Har pump, tank aur shift ka hisaab aasani se rakhein." },
+  "login.heroSubtitle": {
+    en: "CYNVEXA brings real-time reconciliation, credit tracking, and compliance-ready reports to one dashboard built for fuel retailers.",
+    ur: "CYNVEXA aik hi dashboard mein real-time hisaab milan, udhar tracking, aur reports la kar fuel retailers ki madad karta hai.",
+  },
+  "login.feature.reconciliation": { en: "Shift-level reconciliation", ur: "Shift-wise Hisaab Milan" },
+  "login.feature.credit": { en: "Credit customer ledgers", ur: "Udhar Customer Ledger" },
+  "login.feature.reports": { en: "Audit-ready reports", ur: "Audit ke liye Tayyar Reports" },
+  "login.securityNote": { en: "Your data is encrypted and access is role-based.", ur: "Aap ka data encrypted hai aur access role ke mutabiq hai." },
 
   // Registration
   "register.title": { en: "Set up your station on CYNVEXA", ur: "CYNVEXA par Apna Station Set Up Karein" },

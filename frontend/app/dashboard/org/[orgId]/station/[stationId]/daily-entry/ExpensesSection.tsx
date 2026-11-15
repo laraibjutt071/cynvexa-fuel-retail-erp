@@ -1,6 +1,7 @@
 "use client";
 
 import { Receipt } from "lucide-react";
+import { formatMoney } from "@/lib/format";
 import { useCallback, useEffect, useState } from "react";
 import { useLanguage } from "@/lib/i18n/context";
 import { useToast } from "@/components/ui/Toast";
@@ -10,6 +11,7 @@ import { Field, TextInput } from "@/components/ui/Field";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { StatusBadge } from "@/components/ui/Badge";
 import { ExpenseBreakdownChart } from "@/components/charts/ExpenseBreakdownChart";
+import { usePermissions } from "@/lib/permissions";
 import type { Expense } from "@/lib/types";
 import type { AuthFetch } from "./page";
 
@@ -18,16 +20,24 @@ export function ExpensesSection({
   stationId,
   businessDate,
   authFetch,
+  onDirtyChange,
 }: {
   orgId: string;
   stationId: string;
   businessDate: string;
   authFetch: AuthFetch;
+  onDirtyChange: (dirty: boolean) => void;
 }) {
   const { notify } = useToast();
   const { t } = useLanguage();
+  const { can } = usePermissions(orgId, stationId);
+  const canRecord = can("expense:record");
   const [expenses, setExpenses] = useState<Expense[] | null>(null);
   const [form, setForm] = useState({ category: "", description: "", amount: "" });
+
+  useEffect(() => {
+    onDirtyChange(form.category.trim() !== "" || form.description.trim() !== "" || form.amount.trim() !== "");
+  }, [form, onDirtyChange]);
   const [submitting, setSubmitting] = useState(false);
 
   const load = useCallback(async () => {
@@ -77,6 +87,7 @@ export function ExpensesSection({
 
   return (
     <div className="space-y-6">
+      {canRecord && (
       <Card title={t("expenses.recordTitle")} description={t("expenses.recordDescription")}>
         <form onSubmit={submit} className="grid grid-cols-1 gap-3 sm:grid-cols-4">
           <Field label={t("expenses.category")} required>
@@ -120,10 +131,11 @@ export function ExpensesSection({
           </div>
         </form>
       </Card>
+      )}
 
       {expenses && expenses.length > 0 && <ExpenseBreakdownChart expenses={expenses} title={t("expenses.breakdown")} />}
 
-      <Card title={t("expenses.todaysExpenses")} description={`${t("expenses.totalExcluding")}: ${total.toFixed(2)}`}>
+      <Card title={t("expenses.todaysExpenses")} description={`${t("expenses.totalExcluding")}: ${formatMoney(total)}`}>
         {!expenses ? (
           <p className="text-sm text-ink-soft">{t("common.loading")}</p>
         ) : expenses.length === 0 ? (
@@ -143,7 +155,7 @@ export function ExpensesSection({
                 <tr key={e.id} className="border-b border-border/60">
                   <td className="py-2 pr-2 text-ink">{e.category}</td>
                   <td className="py-2 pr-2 text-ink-soft">{e.description}</td>
-                  <td className="py-2 pr-2 text-ink">{e.amount}</td>
+                  <td className="py-2 pr-2 text-ink tabular-nums">{formatMoney(e.amount)}</td>
                   <td className="py-2 pr-2">
                     <StatusBadge status={e.status} />
                   </td>

@@ -4,11 +4,13 @@ import { Truck } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
+import { usePermissions } from "@/lib/permissions";
 import { useToast } from "@/components/ui/Toast";
 import { Card } from "@/components/Card";
 import { Button } from "@/components/ui/Button";
 import { Field, Select, TextInput } from "@/components/ui/Field";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { AccessDenied } from "@/components/ui/AccessDenied";
 import { StatusBadge } from "@/components/ui/Badge";
 import type { Supplier, Tank, TankerReceipt } from "@/lib/types";
 
@@ -16,6 +18,10 @@ export default function PurchasesPage() {
   const { orgId, stationId } = useParams<{ orgId: string; stationId: string }>();
   const { authFetch } = useAuth();
   const { notify } = useToast();
+  const { can, loading: permissionsLoading } = usePermissions(orgId, stationId);
+  const canRecord = can("fuel_receipt:create");
+  const canApprove = can("fuel_receipt:approve");
+  const canView = can(["fuel_receipt:read", "fuel_receipt:create", "fuel_receipt:approve"]);
 
   const [receipts, setReceipts] = useState<TankerReceipt[] | null>(null);
   const [tanks, setTanks] = useState<Tank[]>([]);
@@ -103,6 +109,18 @@ export default function PurchasesPage() {
     await load();
   }
 
+  if (permissionsLoading) {
+    return <p className="px-6 py-8 text-sm text-ink-soft">Loading…</p>;
+  }
+
+  if (!canView) {
+    return (
+      <div className="mx-auto max-w-5xl px-4 py-10">
+        <AccessDenied message="Your role does not include access to purchases and deliveries at this station." />
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto max-w-5xl space-y-6 px-4 py-6 sm:px-6 sm:py-8">
       <div>
@@ -110,6 +128,7 @@ export default function PurchasesPage() {
         <p className="mt-1 text-sm text-ink-soft">Record a tanker delivery, confirm what was actually unloaded, then approve it to add it to stock.</p>
       </div>
 
+      {canRecord && (
       <Card title="Record a new delivery">
         <form onSubmit={submitDelivery} className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <Select required value={form.tank_id} onChange={(e) => setForm({ ...form, tank_id: e.target.value })}>
@@ -154,6 +173,7 @@ export default function PurchasesPage() {
           </div>
         </form>
       </Card>
+      )}
 
       <Card title="Deliveries">
         {!receipts ? (
@@ -177,6 +197,7 @@ export default function PurchasesPage() {
                 </div>
 
                 {r.status === "pending_unload" && (
+                  canRecord ? (
                   <div className="mt-3 flex flex-wrap items-center gap-2">
                     <TextInput
                       type="number"
@@ -190,9 +211,12 @@ export default function PurchasesPage() {
                       Record unload reading
                     </Button>
                   </div>
+                  ) : (
+                    <p className="mt-3 text-xs text-ink-faint">Waiting for someone authorized to record the unload reading.</p>
+                  )
                 )}
 
-                {r.status === "awaiting_approval" && (
+                {r.status === "awaiting_approval" && canApprove && (
                   <div className="mt-3 flex flex-wrap items-center gap-2">
                     <p className="text-xs text-ink-soft">
                       Tank gained {r.tank_gain_quantity ?? "—"} L. Confirm the accepted quantity to approve.
@@ -209,6 +233,9 @@ export default function PurchasesPage() {
                       Approve &amp; add to stock
                     </Button>
                   </div>
+                )}
+                {r.status === "awaiting_approval" && !canApprove && (
+                  <p className="mt-3 text-xs text-ink-faint">Waiting for a Station Manager or Shift Supervisor to approve this delivery.</p>
                 )}
 
                 {r.status === "approved" && (

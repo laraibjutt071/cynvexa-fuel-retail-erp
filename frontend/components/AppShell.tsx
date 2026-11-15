@@ -16,15 +16,18 @@ import {
   Receipt,
   Settings,
   ShieldCheck,
+  Sliders,
   ShoppingCart,
   Truck,
+  UserCheck,
   Wallet,
   X,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useParams, useRouter } from "next/navigation";
-import { useCallback, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useState, type ReactNode } from "react";
 import { useAuth } from "@/lib/auth-context";
+import { usePermissions } from "@/lib/permissions";
 import { useLanguage } from "@/lib/i18n/context";
 import type { TranslationKey } from "@/lib/i18n/translations";
 
@@ -120,6 +123,13 @@ function buildNav(orgId: string, stationId: string | null): NavItem[] {
       needsStation: true,
     },
     {
+      labelKey: "nav.attendance",
+      href: `/dashboard/org/${orgId}/station/${station}/attendance`,
+      icon: UserCheck,
+      anyPermission: ["attendance:read", "attendance:record"],
+      needsStation: true,
+    },
+    {
       labelKey: "nav.approvals",
       href: `/dashboard/org/${orgId}?tab=overview`,
       icon: CheckSquare,
@@ -148,20 +158,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  const isSuperuser = user?.is_superuser ?? false;
-  const permissions = useMemo(() => {
-    const perms = new Set<string>();
-    for (const role of user?.station_roles ?? []) {
-      if (role.organization_id === orgId && (!stationId || role.station_id === null || role.station_id === stationId)) {
-        role.permissions.forEach((p) => perms.add(p));
-      }
-    }
-    return perms;
-  }, [user, orgId, stationId]);
-  const can = useCallback(
-    (codes: string[]) => isSuperuser || codes.some((c) => permissions.has(c)),
-    [isSuperuser, permissions]
-  );
+  const { can, isSuperuser, roleName: currentRole } = usePermissions(orgId, stationId ?? null);
 
   const nav = buildNav(orgId, stationId ?? null).filter(
     (item) => can(item.anyPermission) && (!item.needsStation || stationId)
@@ -174,11 +171,18 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   const sidebarContent = (
     <>
-      <div className="flex items-center gap-2 px-5 py-5">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-500 text-white">
-          <Fuel className="h-4.5 w-4.5" aria-hidden />
+      <div className="px-5 py-5">
+        <div className="flex items-center gap-2.5">
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-500 shadow-lg shadow-brand-500/20 text-white">
+            <Fuel className="h-4.5 w-4.5" aria-hidden />
+          </div>
+          <div className="min-w-0">
+            <span className="block text-sm font-bold text-ink">CYNVEXA</span>
+            {currentRole && (
+              <span className="block truncate text-xs text-ink-faint">{currentRole}</span>
+            )}
+          </div>
         </div>
-        <span className="text-base font-semibold text-ink">CYNVEXA</span>
       </div>
       <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 pb-4">
         {nav.map((item) => {
@@ -199,22 +203,11 @@ export function AppShell({ children }: { children: ReactNode }) {
           );
         })}
       </nav>
-      <div className="border-t border-border px-3 py-3">
-        <button
-          onClick={() => setLanguage(language === "en" ? "ur" : "en")}
-          className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-ink-soft hover:bg-surface-elevated hover:text-ink"
-          aria-label="Switch language"
-        >
-          <Languages className="h-4.5 w-4.5" aria-hidden />
-          {t("common.language")}
-          <span className="ml-auto rounded-full bg-brand-50 px-2 py-0.5 text-xs font-semibold text-accent">
-            {language === "en" ? "EN" : "UR"}
-          </span>
-        </button>
+      <div className="border-t border-border px-3 py-2 space-y-0.5">
         {isSuperuser && (
           <Link
             href="/dashboard/platform"
-            className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-ink-soft hover:bg-surface-elevated hover:text-ink"
+            className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-ink-soft hover:bg-surface-elevated hover:text-ink"
           >
             <ShieldCheck className="h-4.5 w-4.5" aria-hidden />
             Platform Admin
@@ -223,19 +216,50 @@ export function AppShell({ children }: { children: ReactNode }) {
         {can(["user:read"]) && (
           <Link
             href={`/dashboard/org/${orgId}/settings`}
-            className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-ink-soft hover:bg-surface-elevated hover:text-ink"
+            className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-ink-soft hover:bg-surface-elevated hover:text-ink"
           >
             <Settings className="h-4.5 w-4.5" aria-hidden />
             {t("nav.usersSettings")}
           </Link>
         )}
+        {stationId && can(["station:update"]) && (
+          <Link
+            href={`/dashboard/org/${orgId}/station/${stationId}/settings`}
+            className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-ink-soft hover:bg-surface-elevated hover:text-ink"
+          >
+            <Sliders className="h-4.5 w-4.5" aria-hidden />
+            {t("nav.stationSettings")}
+          </Link>
+        )}
         <button
-          onClick={handleLogout}
-          className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-ink-soft hover:bg-surface-elevated hover:text-ink"
+          onClick={() => setLanguage(language === "en" ? "ur" : "en")}
+          className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-medium text-ink-soft hover:bg-surface-elevated hover:text-ink"
+          aria-label="Switch language"
         >
-          <LogOut className="h-4.5 w-4.5" aria-hidden />
-          {t("nav.signOut")}
+          <Languages className="h-4.5 w-4.5" aria-hidden />
+          {t("common.language")}
+          <span className="ml-auto rounded-full bg-brand-50 px-1.5 py-0.5 text-xs font-semibold text-accent">
+            {language === "en" ? "EN" : "UR"}
+          </span>
         </button>
+      </div>
+      <div className="border-t border-border px-3 py-3">
+        <div className="flex items-center gap-3 px-3">
+          <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-brand-100 text-xs font-bold text-brand-400">
+            {(user?.full_name ?? "U").charAt(0).toUpperCase()}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-medium text-ink">{user?.full_name}</p>
+            <p className="truncate text-xs text-ink-faint">{user?.email}</p>
+          </div>
+          <button
+            onClick={handleLogout}
+            className="rounded-md p-1.5 text-ink-faint transition-colors hover:bg-surface-elevated hover:text-ink"
+            aria-label={t("nav.signOut")}
+          >
+            <LogOut className="h-4 w-4" aria-hidden />
+          </button>
+        </div>
       </div>
     </>
   );

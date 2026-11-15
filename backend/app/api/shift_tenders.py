@@ -12,6 +12,7 @@ from app.api.common import (
 )
 from app.api.deps import get_db, require_permission
 from app.core.audit import write_audit_log
+from app.core.credit_ledger import get_credit_customer_balance
 from app.core.permission_codes import SHIFT_READ, SHIFT_RECONCILE_APPROVE, SHIFT_RECONCILE_RECORD
 from app.exceptions import ConflictError, NotFoundError, ValidationFailedError
 from app.models.payment_method import PaymentMethodCategory
@@ -54,7 +55,15 @@ async def record_tender(
     if not is_credit and payload.credit_customer_id is not None:
         raise ValidationFailedError("credit_customer_id is only valid for a credit-category payment method.")
     if payload.credit_customer_id is not None:
-        await get_credit_customer_or_404(db, organization_id, payload.credit_customer_id)
+        customer = await get_credit_customer_or_404(db, organization_id, payload.credit_customer_id)
+        if customer.credit_limit is not None:
+            current_balance = await get_credit_customer_balance(db, payload.credit_customer_id)
+            if current_balance + payload.amount > customer.credit_limit:
+                raise ValidationFailedError(
+                    f"Credit limit exceeded: current balance {current_balance}, "
+                    f"this sale {payload.amount}, limit {customer.credit_limit}. "
+                    f"Increase the customer's credit limit before retrying."
+                )
 
     tender = ShiftTender(
         shift_id=shift_id,

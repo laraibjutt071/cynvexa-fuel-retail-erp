@@ -321,3 +321,149 @@ Also found, while smoke-testing: no endpoint existed to list a shift's own tank/
 **Not done / deferred:** see `docs/REMAINING_RISKS.md`'s new section in full. Headline items: no "Users & Settings" page yet (sidebar entry exists, links to nothing); the "Reports"/"Fuel Stock" sidebar items reuse existing report tabs rather than a new richer reports hub; no charting/visualization library was added; the Purchases page doesn't yet surface duplicate-delivery or quantity-variance warnings beyond what approval already computes; no dedicated accessibility (WCAG) audit beyond the tab-role fix that was needed anyway.
 
 **Blockers:** none for continuing this work. The next highest-priority items, in the user's own stated order, are: finishing "Sales & Collections"/"Fuel Stock" as fully first-class pages (currently reused tabs) and adding the visualizations/alerts section (Phase 5 of the user's own strategy) before a dedicated accessibility pass (Phase 7).
+
+---
+
+## Pilot Day 2 — Reading Corrections, FK Safety, Credit Customer Enhancement — completion record (2026-11-14)
+
+**Scope delivered:** the 24-hour reading correction policy (the central Day 2 deliverable), CASCADE→RESTRICT FK safety on reading foreign keys, dynamic tank configuration (location + calibration reference fields), pilot-ready credit customer module (credit limits, payment terms, contact details, statements, receivables ageing), three new frontend screens (reading corrections, tank management, credit customers with statement + ageing), and comprehensive acceptance tests for the 24-hour boundary.
+
+### A. 24-Hour Reading Correction Policy
+
+**New model:** `ReadingCorrection` (`backend/app/models/reading_correction.py`) — a unified model handling both Phase 1 (within 24h, in-place correction) and Phase 2 (post-lock, amendment-only) through the `is_post_lock` boolean flag, rather than two separate tables.
+
+**Design decisions:**
+- `CORRECTION_WINDOW_HOURS = 24` — server-side constant, never configurable by the client.
+- `_now_utc()` — all window comparisons use server-side `datetime.now(timezone.utc)`, never a client-supplied timestamp.
+- Phase 1 corrections (within 24h): when approved, the original reading row is updated in-place and the correction record serves as the full audit trail (original_value, corrected_value, reason, requester, approver, timestamps).
+- Phase 2 corrections (at/after 24h): the original reading is **never modified**. The amendment record preserves the corrected value and full audit trail, but `_apply_correction_to_reading` is never called.
+- The approve endpoint **re-checks** the correction window at approval time for Phase 1 corrections. A correction requested at 23h59m that is approved at 24h01m is rejected (409) with a clear message, not silently allowed.
+- `SELECT ... FOR UPDATE` row locking on every reading access during correction flow.
+- Corrections to the same value are rejected (422) — no-op corrections are not allowed.
+
+**New permissions:** `reading:correct`, `reading:correct_approve` — seeded to Station Manager, Shift Supervisor, and Owner. Cashier/Operator deliberately excluded.
+
+**New API endpoints (`backend/app/api/reading_corrections.py`):**
+- `POST .../reading-corrections` — request a correction (auto-detects `is_post_lock`)
+- `POST .../reading-corrections/{id}/approve` — approve with window re-check
+- `POST .../reading-corrections/{id}/reject` — reject with optional reason
+- `GET .../reading-corrections` — list all corrections for a shift
+
+### B. CASCADE → RESTRICT FK Safety
+
+Changed `shift_tank_readings.shift_id` and `shift_nozzle_readings.shift_id` from `ondelete="CASCADE"` to `ondelete="RESTRICT"` in both the model definitions and the Alembic migration. This prevents accidental data loss — a shift cannot be deleted while readings reference it.
+
+### C. Dynamic Tank Configuration
+
+Added `location` (String 200) and `calibration_reference` (String 500) to the `Tank` model, schema, and migration. These flow through the existing `PATCH .../tanks/{id}` endpoint automatically via `**payload.model_dump()`.
+
+### D. Pilot-Ready Credit Customer Module
+
+Enhanced `CreditCustomer` model with: `phone`, `contact_person`, `credit_limit` (NUMERIC 14,2), `payment_terms_days`, `address`, `notes`. Added check constraints for `credit_limit >= 0` and `payment_terms_days > 0`.
+
+**Credit limit enforcement:** added to `shift_tenders.py` — when a customer has a credit_limit set, the tender endpoint checks `current_balance + sale_amount > credit_limit` and rejects with a clear message if exceeded.
+
+**New endpoints (added to `credit_collections.py`):**
+- `GET .../credit-customers/{id}/statement?start_date=&end_date=` — builds a statement from ShiftTenders + CreditCustomerPayments, computes opening balance, running balance per transaction.
+- `GET .../credit-customers/ageing` — FIFO allocation of payments against oldest tenders, bucketed into current/30d/60d/90d/90d+ bands.
+
+### E. Migration
+
+Single migration `a1b2c3d4e5f6_day2_reading_corrections_fk_safety_.py` covering all Day 2 schema changes:
+- Creates `reading_corrections` table with all columns, constraints, and indexes
+- Drops+recreates shift_tank_readings.shift_id FK as RESTRICT
+- Drops+recreates shift_nozzle_readings.shift_id FK as RESTRICT
+- Adds `tanks.location` and `tanks.calibration_reference`
+- Adds credit customer columns with check constraints
+- Seeds `reading:correct` and `reading:correct_approve` permissions
+- Full downgrade path reverses everything
+
+### F. Tests
+
+`backend/tests/test_reading_corrections.py` — 12 tests covering every acceptance criterion:
+1. Correction at 23h59m is allowed (within window)
+2. Correction at exactly 24h is post-lock
+3. Correction at 24h01m is post-lock
+4. Superuser cannot approve a direct-edit after 24h (window re-check on approval)
+5. Post-lock amendment preserves the original reading and records full audit trail
+6. Within-window approved correction modifies the reading in-place
+7. Unauthorized user (cashier) cannot request a correction (403)
+8. Rejected correction does not modify the reading
+9. Cannot correct to the same value (422)
+10. Nozzle opening totalizer correction workflow
+11. List corrections for a shift
+12. Double-approve is rejected (409)
+
+All tests use `unittest.mock.patch("app.api.reading_corrections._now_utc")` to freeze/control time — no real waiting.
+
+### G. Frontend
+
+Three new pages, all following existing component patterns (`Card`, `Button`, `Field`, `TextInput`, `useAuth`, `authFetch`):
+
+1. **Reading corrections** (`/dashboard/org/[orgId]/station/[stationId]/reading-corrections`) — shift picker, correction list with status badges (pending/approved/rejected, post-lock indicator), approve/reject actions.
+2. **Tank management** (`/dashboard/org/[orgId]/station/[stationId]/tanks`) — tank cards with capacity, book stock, location, calibration reference; inline edit for location and calibration reference.
+3. **Credit customers** (`/dashboard/org/[orgId]/credit-customers`) — customer list with balances and credit limits, create-customer form, per-customer statement with date range, receivables ageing table with FIFO-bucketed columns.
+
+Updated `frontend/lib/types.ts` with: `ReadingCorrection`, `CreditCustomerBalanceDetail`, `CreditCustomerStatement`, `CreditCustomerStatementEntry`, `CreditCustomerAgeingEntry` interfaces; added `location`/`calibration_reference` to `Tank`; expanded `CreditCustomer` with new fields.
+
+### H. Build Verification
+
+- **Frontend:** `next build` — all 14 routes compiled and generated successfully, 0 TypeScript errors.
+- **Backend:** all new/modified Python files compile without syntax errors (`py_compile`).
+- **Backend tests:** cannot run locally (no PostgreSQL instance on this Windows dev machine — ConnectionRefusedError). This is a pre-existing environmental limitation documented since Day 1, not a Day 2 regression.
+
+### I. Documentation Updated
+
+- `docs/IMPLEMENTATION_PLAN.md` — this section.
+- `docs/ASSUMPTIONS.md` — #18 updated (reading corrections now implemented), #22 updated (credit customer no longer minimal stub), #38 added (24-hour correction policy details).
+- `docs/REMAINING_RISKS.md` — Day 2 section added.
+
+### J. What Changed (File Summary)
+
+**New files (7):**
+- `backend/app/models/reading_correction.py`
+- `backend/app/api/reading_corrections.py`
+- `backend/app/schemas/reading_correction.py`
+- `backend/alembic/versions/a1b2c3d4e5f6_day2_reading_corrections_fk_safety_.py`
+- `backend/tests/test_reading_corrections.py`
+- `frontend/app/dashboard/org/[orgId]/station/[stationId]/reading-corrections/page.tsx`
+- `frontend/app/dashboard/org/[orgId]/station/[stationId]/tanks/page.tsx`
+- `frontend/app/dashboard/org/[orgId]/credit-customers/page.tsx`
+
+**Modified files (13):**
+- `backend/app/models/__init__.py` (exports)
+- `backend/app/models/shift_tank_reading.py` (CASCADE→RESTRICT)
+- `backend/app/models/shift_nozzle_reading.py` (CASCADE→RESTRICT)
+- `backend/app/models/tank.py` (location, calibration_reference)
+- `backend/app/models/credit_customer.py` (new fields + constraints)
+- `backend/app/core/permission_codes.py` (new permissions + role seeds)
+- `backend/app/main.py` (router registration)
+- `backend/app/api/shift_tenders.py` (credit limit enforcement)
+- `backend/app/api/credit_customers.py` (new fields in create)
+- `backend/app/api/credit_collections.py` (statement + ageing endpoints)
+- `backend/app/schemas/credit_customer.py` (new fields)
+- `backend/app/schemas/credit_collection.py` (new schemas)
+- `backend/app/schemas/tank.py` (new fields)
+- `backend/tests/conftest.py` (cleanup table list)
+- `frontend/lib/types.ts` (new interfaces)
+
+### K. Remaining Risks / Gaps
+
+1. **Backend tests cannot run locally** — no PostgreSQL instance. The tests are syntactically correct and compile, but have not been executed against a real database. First priority for Day 3 or CI setup.
+2. **No Playwright e2e tests for the three new frontend pages** — deferred to when a running backend is available.
+3. **No frontend automated test for the 24-hour deadline UI indicator** (showing remaining time, locked status) — the backend enforces the policy server-side regardless.
+
+### L. Constraints Honored
+
+- NUMERIC/Decimal for all financial and litre calculations — no floating-point money.
+- No AI features or paid AI APIs introduced.
+- No paid hosting or services purchased.
+- No production deployment or destructive migration executed.
+- No secrets committed.
+- Existing GitHub project architecture preserved.
+
+### M. Verdict
+
+Day 2 deliverables are complete. The 24-hour reading correction policy is implemented end-to-end (model, API, migration, tests, frontend). Credit customer module is pilot-ready with limits, statements, and ageing. FK safety is tightened. Tank configuration is dynamic. All code compiles, the frontend builds clean, and tests are written.
+
+**Blockers for Day 3:** none. Awaiting user approval before proceeding.

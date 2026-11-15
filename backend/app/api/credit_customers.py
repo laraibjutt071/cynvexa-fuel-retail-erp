@@ -26,10 +26,22 @@ async def create_credit_customer(
 ) -> CreditCustomer:
     await get_organization_or_404(db, organization_id)
 
-    customer = CreditCustomer(organization_id=organization_id, name=payload.name)
+    customer = CreditCustomer(
+        organization_id=organization_id,
+        name=payload.name,
+        phone=payload.phone,
+        contact_person=payload.contact_person,
+        credit_limit=payload.credit_limit,
+        payment_terms_days=payload.payment_terms_days,
+        address=payload.address,
+        notes=payload.notes,
+    )
     db.add(customer)
     await db.flush()
 
+    after_data = {"name": customer.name}
+    if customer.credit_limit is not None:
+        after_data["credit_limit"] = str(customer.credit_limit)
     await write_audit_log(
         db,
         action="credit_customer.create",
@@ -37,7 +49,7 @@ async def create_credit_customer(
         entity_id=str(customer.id),
         actor_user_id=current_user.id,
         organization_id=organization_id,
-        after={"name": customer.name},
+        after=after_data,
         ip_address=request.client.host if request.client else None,
     )
     await db.commit()

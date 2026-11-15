@@ -1,7 +1,8 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,14 +13,19 @@ from app.core.credit_ledger import get_credit_customer_balance
 from app.core.csv_export import csv_response
 from app.core.permission_codes import CREDIT_COLLECTION_READ, CREDIT_COLLECTION_RECORD
 from app.exceptions import ConflictError
+from app.core.revenue import round_money
 from app.models.credit_customer import CreditCustomer
 from app.models.credit_customer_payment import CreditCustomerPayment
+from app.models.shift_tender import ShiftTender
 from app.models.user import User
 from app.schemas.credit_collection import (
+    CreditCustomerAgeingEntry,
     CreditCustomerBalanceRead,
     CreditCustomerPaymentCreate,
     CreditCustomerPaymentRead,
     CreditCustomerPaymentReverse,
+    CreditCustomerStatement,
+    CreditCustomerStatementEntry,
 )
 
 router = APIRouter(
@@ -123,7 +129,8 @@ async def get_credit_customer_balance_endpoint(
     customer = await get_credit_customer_or_404(db, organization_id, credit_customer_id)
     balance = await get_credit_customer_balance(db, credit_customer_id)
     return CreditCustomerBalanceRead(
-        credit_customer_id=customer.id, credit_customer_name=customer.name, balance=balance
+        credit_customer_id=customer.id, credit_customer_name=customer.name,
+        balance=balance, credit_limit=customer.credit_limit,
     )
 
 
@@ -139,7 +146,9 @@ async def list_credit_customer_balances(
     ).scalars().all()
     return [
         CreditCustomerBalanceRead(
-            credit_customer_id=c.id, credit_customer_name=c.name, balance=await get_credit_customer_balance(db, c.id)
+            credit_customer_id=c.id, credit_customer_name=c.name,
+            balance=await get_credit_customer_balance(db, c.id),
+            credit_limit=c.credit_limit,
         )
         for c in customers
     ]
@@ -154,3 +163,160 @@ async def export_credit_customer_balances(
     balances = await list_credit_customer_balances(organization_id, current_user=current_user, db=db)
     rows = [{"credit_customer_name": b.credit_customer_name, "balance": str(b.balance)} for b in balances]
     return csv_response("credit-customer-balances.csv", ["credit_customer_name", "balance"], rows)
+
+
+@router.get("/statement", response_model=CreditCustomerStatement)
+async def get_credit_customer_statement(
+    organization_id: uuid.UUID,
+    credit_customer_id: uuid.UUID,
+    start_date: date = Query(...),
+    end_date: date = Query(...),
+    current_user: User = Depends(require_permission(CREDIT_COLLECTION_READ)),
+    db: AsyncSession = Depends(get_db),
+) -> CreditCustomerStatement:
+    customer = await get_credit_customer_or_404(db, organization_id, credit_customer_id)
+
+    sales = (
+        await db.execute(
+            select(ShiftTender)
+            .where(
+                ShiftTender.credit_customer_id == credit_customer_id,
+                ShiftTender.reversed_at.is_(None),
+            )
+            .order_by(ShiftTender.created_at)
+        )
+    ).scalars().all()
+
+    payments = (
+        await db.execute(
+            select(CreditCustomerPayment)
+            .where(
+                CreditCustomerPayment.credit_customer_id == credit_customer_id,
+                CreditCustomerPayment.reversed_at.is_(None),
+            )
+            .order_by(CreditCustomerPayment.payment_date)
+        )
+    ).scalars().all()
+
+    events: list[tuple[date, str, Decimal, Decimal]] = []
+    for s in sales:
+        sale_date = s.created_at.date()
+        if start_date <= sale_date <= end_date:
+            events.append((sale_date, f"Credit sale (ref: {s.reference or 'N/A'})", s.amount, Decimal(0)))
+    for p in payments:
+        if start_date <= p.payment_date <= end_date:
+            events.append((p.payment_date, f"Payment received (ref: {p.reference or 'N/A'})", Decimal(0), p.amount))
+
+    events.sort(key=lambda e: e[0])
+
+    opening_balance = Decimal(0)
+    for s in sales:
+        if s.created_at.date() < start_date:
+            opening_balance += s.amount
+    for p in payments:
+        if p.payment_date < start_date:
+            opening_balance -= p.amount
+    opening_balance = round_money(opening_balance)
+
+    entries = []
+    running = opening_balance
+    for d, desc, debit, credit in events:
+        running = round_money(running + debit - credit)
+        entries.append(CreditCustomerStatementEntry(
+            date=d, description=desc, debit=debit, credit=credit, running_balance=running,
+        ))
+
+    return CreditCustomerStatement(
+        credit_customer_id=customer.id,
+        credit_customer_name=customer.name,
+        opening_balance=opening_balance,
+        entries=entries,
+        closing_balance=running,
+    )
+
+
+@balances_router.get("/ageing", response_model=list[CreditCustomerAgeingEntry])
+async def list_credit_customer_ageing(
+    organization_id: uuid.UUID,
+    current_user: User = Depends(require_permission(CREDIT_COLLECTION_READ)),
+    db: AsyncSession = Depends(get_db),
+) -> list[CreditCustomerAgeingEntry]:
+    await get_organization_or_404(db, organization_id)
+    customers = (
+        await db.execute(
+            select(CreditCustomer).where(
+                CreditCustomer.organization_id == organization_id,
+                CreditCustomer.is_active.is_(True),
+            )
+        )
+    ).scalars().all()
+
+    today = date.today()
+    result = []
+
+    for customer in customers:
+        tenders = (
+            await db.execute(
+                select(ShiftTender)
+                .where(
+                    ShiftTender.credit_customer_id == customer.id,
+                    ShiftTender.reversed_at.is_(None),
+                )
+            )
+        ).scalars().all()
+
+        collections_total = (
+            await db.execute(
+                select(CreditCustomerPayment)
+                .where(
+                    CreditCustomerPayment.credit_customer_id == customer.id,
+                    CreditCustomerPayment.reversed_at.is_(None),
+                )
+            )
+        ).scalars().all()
+        paid = sum(p.amount for p in collections_total)
+
+        buckets = {
+            "current": Decimal(0),
+            "days_30": Decimal(0),
+            "days_60": Decimal(0),
+            "days_90": Decimal(0),
+            "over_90": Decimal(0),
+        }
+
+        remaining_paid = paid
+        sorted_tenders = sorted(tenders, key=lambda t: t.created_at)
+
+        for tender in sorted_tenders:
+            if remaining_paid >= tender.amount:
+                remaining_paid -= tender.amount
+                continue
+            unpaid = tender.amount - remaining_paid
+            remaining_paid = Decimal(0)
+
+            age = (today - tender.created_at.date()).days
+            if age <= 30:
+                buckets["current"] += unpaid
+            elif age <= 60:
+                buckets["days_30"] += unpaid
+            elif age <= 90:
+                buckets["days_60"] += unpaid
+            elif age <= 120:
+                buckets["days_90"] += unpaid
+            else:
+                buckets["over_90"] += unpaid
+
+        total = sum(buckets.values())
+        if total > 0:
+            result.append(CreditCustomerAgeingEntry(
+                credit_customer_id=customer.id,
+                credit_customer_name=customer.name,
+                current=round_money(buckets["current"]),
+                days_30=round_money(buckets["days_30"]),
+                days_60=round_money(buckets["days_60"]),
+                days_90=round_money(buckets["days_90"]),
+                over_90=round_money(buckets["over_90"]),
+                total=round_money(total),
+            ))
+
+    return result

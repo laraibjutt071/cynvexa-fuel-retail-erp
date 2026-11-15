@@ -35,4 +35,6 @@ class Tank(UUIDPKMixin, TimestampMixin, Base):
     # headroom for thermal expansion / overfill safety. A receipt must never
     # be accepted if it would push book stock above this, not `capacity`.
     safe_fill_limit: Mapped[Decimal] = mapped_column(LITRES, nullable=False)
+    location: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    calibration_reference: Mapped[str | None] = mapped_column(String(500), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)

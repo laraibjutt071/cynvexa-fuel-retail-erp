@@ -66,6 +66,9 @@ SHIFT_OPEN = "shift:open"
 SHIFT_CLOSE = "shift:close"
 SHIFT_APPROVE = "shift:approve"
 
+READING_CORRECT = "reading:correct"
+READING_CORRECT_APPROVE = "reading:correct_approve"
+
 # Phase D — shift-level financial reconciliation. Master data (payment
 # methods, the minimal credit-customer stub) follows the read/manage
 # pattern, Owner-only for manage. The reconciliation workflow itself is
@@ -127,6 +130,10 @@ REPORT_READ = "report:read"
 # role-based, same pattern as ORGANIZATION_CREATE above).
 SUBSCRIPTION_READ = "subscription:read"
 
+ATTENDANCE_READ = "attendance:read"
+ATTENDANCE_RECORD = "attendance:record"
+PAYROLL_MANAGE = "payroll:manage"
+
 ALL_PERMISSIONS: dict[str, str] = {
     ORGANIZATION_READ: "View organization profile and settings.",
     ORGANIZATION_UPDATE: "Edit organization profile and settings.",
@@ -158,6 +165,8 @@ ALL_PERMISSIONS: dict[str, str] = {
     SHIFT_OPEN: "Open a shift and record opening tank/nozzle readings.",
     SHIFT_CLOSE: "Record closing readings, exceptional litres and price-change boundary readings; close a shift.",
     SHIFT_APPROVE: "Approve a closed shift (posts the stock ledger) and approve flagged meter events.",
+    READING_CORRECT: "Request a correction to a submitted reading within the 24-hour window or propose a post-lock amendment.",
+    READING_CORRECT_APPROVE: "Approve or reject a reading correction or post-lock amendment request.",
     PAYMENT_METHOD_READ: "View configured payment methods.",
     PAYMENT_METHOD_MANAGE: "Create or edit a payment method.",
     CREDIT_CUSTOMER_READ: "View credit customer records.",
@@ -183,6 +192,9 @@ ALL_PERMISSIONS: dict[str, str] = {
     INVENTORY_MOVEMENT_RECORD: "Record an inventory receipt, issue or sale.",
     INVENTORY_MOVEMENT_ADJUST: "Record an inventory stock adjustment.",
     REPORT_READ: "View owner-dashboard reports and export them.",
+    ATTENDANCE_READ: "View attendance records.",
+    ATTENDANCE_RECORD: "Record or edit attendance entries.",
+    PAYROLL_MANAGE: "Manage payroll rules and generate salary records.",
     SUBSCRIPTION_READ: "View the organization's own subscription plan, status and payment history.",
 }
 
@@ -213,6 +225,8 @@ SEED_ROLES: dict[str, list[str]] = {
         SHIFT_OPEN,
         SHIFT_CLOSE,
         SHIFT_APPROVE,
+        READING_CORRECT,
+        READING_CORRECT_APPROVE,
         PAYMENT_METHOD_READ,
         CREDIT_CUSTOMER_READ,
         SHIFT_RECONCILE_RECORD,
@@ -229,6 +243,9 @@ SEED_ROLES: dict[str, list[str]] = {
         INVENTORY_MOVEMENT_RECORD,
         INVENTORY_MOVEMENT_ADJUST,
         REPORT_READ,
+        ATTENDANCE_READ,
+        ATTENDANCE_RECORD,
+        PAYROLL_MANAGE,
     ],
     "Shift Supervisor": [
         STATION_READ,
@@ -246,6 +263,8 @@ SEED_ROLES: dict[str, list[str]] = {
         SHIFT_OPEN,
         SHIFT_CLOSE,
         SHIFT_APPROVE,
+        READING_CORRECT,
+        READING_CORRECT_APPROVE,
         PAYMENT_METHOD_READ,
         CREDIT_CUSTOMER_READ,
         SHIFT_RECONCILE_RECORD,
@@ -258,6 +277,15 @@ SEED_ROLES: dict[str, list[str]] = {
         SHIFT_READ,
         SHIFT_OPEN,
         SHIFT_CLOSE,
+        # Phase 6 (owner-approved): the Daily Entry Readings step lists
+        # the station's tanks/nozzles to record a reading against -
+        # shift:open/shift:close alone let this role *record* one, but
+        # without these two read permissions the listing call 403s and
+        # the step is unusable (found in Phase 5, docs/PHASE_5_DAILY_ENTRY_REPORT.md
+        # Section 4). Deliberately read-only: no *_MANAGE, no approval
+        # permission is granted alongside these.
+        TANK_READ,
+        NOZZLE_READ,
         PAYMENT_METHOD_READ,
         SHIFT_RECONCILE_RECORD,
         INVENTORY_ITEM_READ,
@@ -272,6 +300,7 @@ SEED_ROLES: dict[str, list[str]] = {
         FUEL_PRICE_READ,
         FUEL_RECEIPT_READ,
         SHIFT_READ,
+        READING_CORRECT_APPROVE,
         PAYMENT_METHOD_READ,
         CREDIT_CUSTOMER_READ,
         SHIFT_RECONCILE_RECORD,
@@ -288,6 +317,8 @@ SEED_ROLES: dict[str, list[str]] = {
         INVENTORY_MOVEMENT_READ,
         REPORT_READ,
         SUBSCRIPTION_READ,
+        ATTENDANCE_READ,
+        PAYROLL_MANAGE,
     ],
     "Storekeeper / Technician": [
         STATION_READ,

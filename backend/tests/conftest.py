@@ -38,8 +38,15 @@ TestSessionLocal = async_sessionmaker(bind=test_engine, expire_on_commit=False, 
 
 @pytest_asyncio.fixture(scope="session", autouse=True, loop_scope="session")
 async def _create_schema():
+    from sqlalchemy import text
+
     async with test_engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
+        await conn.execute(text(
+            "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+            "WHERE datname = current_database() AND pid <> pg_backend_pid()"
+        ))
+        await conn.execute(text("DROP SCHEMA public CASCADE"))
+        await conn.execute(text("CREATE SCHEMA public"))
         await conn.run_sync(Base.metadata.create_all)
     yield
     await test_engine.dispose()
@@ -76,6 +83,11 @@ async def _clean_tables():
     yield
     async with test_engine.begin() as conn:
         for table in (
+            "salary_records",
+            "payroll_rules",
+            "attendance_records",
+            "shift_templates",
+            "expense_categories",
             "subscription_payments",
             "subscriptions",
             "plans",
@@ -85,6 +97,7 @@ async def _clean_tables():
             "supplier_payments",
             "credit_customer_payments",
             "expenses",
+            "reading_corrections",
             "shift_reconciliation_amendments",
             "shift_reconciliations",
             "shift_tenders",

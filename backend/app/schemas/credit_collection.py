@@ -35,3 +35,31 @@ class CreditCustomerBalanceRead(BaseModel):
     credit_customer_id: uuid.UUID
     credit_customer_name: str
     balance: Decimal
+    credit_limit: Decimal | None = None
+
+
+class CreditCustomerStatementEntry(BaseModel):
+    date: date
+    description: str
+    debit: Decimal
+    credit: Decimal
+    running_balance: Decimal
+
+
+class CreditCustomerStatement(BaseModel):
+    credit_customer_id: uuid.UUID
+    credit_customer_name: str
+    opening_balance: Decimal
+    entries: list[CreditCustomerStatementEntry]
+    closing_balance: Decimal
+
+
+class CreditCustomerAgeingEntry(BaseModel):
+    credit_customer_id: uuid.UUID
+    credit_customer_name: str
+    current: Decimal
+    days_30: Decimal
+    days_60: Decimal
+    days_90: Decimal
+    over_90: Decimal
+    total: Decimal

@@ -57,15 +57,22 @@ test.describe("Daily Entry workspace", () => {
     await openingRow.getByRole("button", { name: "Save" }).click();
     await expect(page.getByText("100.000 L sold today")).toBeVisible();
 
+    // Phase 5 added a confirmation dialog before this action (it ends
+    // further reading edits for the day) - a real, intentional UX
+    // addition, not a bug to route around.
     await page.getByRole("button", { name: "Close today's readings" }).click();
+    await page.getByRole("button", { name: "Yes, close readings" }).click();
     await expect(page.getByText("closed", { exact: false }).first()).toBeVisible();
 
     // --- Sales & collections: 100L * 280.00/L = 28000.00 ---
+    // Displayed as "28,000.00" since Phase 4's formatMoney() added
+    // thousands-separator formatting to this table - a real, intentional
+    // display change, not a bug this assertion should paper over.
     await page.getByRole("tab", { name: "Sales & Collections" }).click();
     await page.locator("select").first().selectOption({ label: "Cash (Cash)" });
     await page.getByPlaceholder("Amount").fill("28000");
     await page.getByRole("button", { name: "Record" }).click();
-    await expect(page.getByRole("cell", { name: "28000.00" })).toBeVisible();
+    await expect(page.getByRole("cell", { name: "28,000.00" })).toBeVisible();
 
     // --- Expenses ---
     await page.getByRole("tab", { name: "Expenses" }).click();
@@ -81,12 +88,15 @@ test.describe("Daily Entry workspace", () => {
     await page.getByLabel("Actual cash counted").fill("28000");
     await page.getByRole("button", { name: "Close cash for today" }).click();
     await expect(page.getByText("Expected revenue")).toBeVisible();
-    await expect(page.getByText("28000.00").first()).toBeVisible();
+    // "28,000.00" since Phase 5 applied formatMoney() to these reconciliation tiles too.
+    await expect(page.getByText("28,000.00").first()).toBeVisible();
 
     // --- Review & submit ---
     await page.getByRole("tab", { name: "Review & Submit" }).click();
     await expect(page.getByText("Today's readings closed for every nozzle")).toBeVisible();
+    // Phase 5 added a confirmation dialog before final approval too.
     await page.getByRole("button", { name: "Approve today's entry" }).click();
+    await page.getByRole("button", { name: "Yes, approve today's entry" }).click();
     await expect(page.getByText("stock and cash records are final")).toBeVisible();
   });
 });

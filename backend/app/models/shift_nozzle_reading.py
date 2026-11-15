@@ -49,7 +49,7 @@ class ShiftNozzleReading(UUIDPKMixin, TimestampMixin, Base):
     )
 
     shift_id: Mapped[uuid.UUID] = mapped_column(
-        PG_UUID(as_uuid=True), ForeignKey("shifts.id", ondelete="CASCADE"), nullable=False
+        PG_UUID(as_uuid=True), ForeignKey("shifts.id", ondelete="RESTRICT"), nullable=False
     )
     nozzle_id: Mapped[uuid.UUID] = mapped_column(
         PG_UUID(as_uuid=True), ForeignKey("nozzles.id", ondelete="RESTRICT"), nullable=False

@@ -1,7 +1,20 @@
 from functools import lru_cache
 from typing import Literal
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Known placeholder values that must never reach a production deployment -
+# shipped in .env.example / this repo's docs as "replace me" text, not real
+# secrets. Checked case-insensitively so a copy-paste with different casing
+# still gets caught.
+_INSECURE_JWT_SECRET_PLACEHOLDERS = {
+    "replace-with-a-generated-secret-never-commit-this",
+    "changeme",
+    "secret",
+    "test-secret-key-not-for-production-use-only",
+}
+_MIN_PRODUCTION_JWT_SECRET_LENGTH = 32
 
 
 class Settings(BaseSettings):
@@ -17,6 +30,30 @@ class Settings(BaseSettings):
     refresh_token_expire_days: int = 30
 
     cors_allowed_origins: str = "http://localhost:3000"
+
+    @model_validator(mode="after")
+    def _reject_weak_production_jwt_secret(self) -> "Settings":
+        # jwt_secret_key being required (no default) already makes the app
+        # refuse to start with no value at all, in any environment. This
+        # adds the second half: in production specifically, also refuse a
+        # *present but weak* secret - too short, or a known placeholder
+        # copied from .env.example / test fixtures without being replaced.
+        if self.env != "production":
+            return self
+        secret = self.jwt_secret_key
+        if secret.lower() in _INSECURE_JWT_SECRET_PLACEHOLDERS:
+            raise ValueError(
+                "JWT_SECRET_KEY is set to a known placeholder/example value. "
+                "Generate a real secret before starting in production: "
+                'python -c "import secrets; print(secrets.token_urlsafe(48))"'
+            )
+        if len(secret) < _MIN_PRODUCTION_JWT_SECRET_LENGTH:
+            raise ValueError(
+                f"JWT_SECRET_KEY must be at least {_MIN_PRODUCTION_JWT_SECRET_LENGTH} characters "
+                "in production. Generate a real secret: "
+                'python -c "import secrets; print(secrets.token_urlsafe(48))"'
+            )
+        return self
 
     # Local-disk evidence storage. NOT durable across container restarts or
     # safe with more than one backend instance - a real deployment must swap
