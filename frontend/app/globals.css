@@ -272,6 +272,38 @@ textarea {
   animation-iteration-count: infinite;
 }
 
+/* Login page: diagonal light sweep across the primary button on hover.
+ * The sweep lives in a pseudo-element clipped by overflow-hidden on the
+ * button itself, so it never affects layout or hit-testing. */
+.btn-shine {
+  position: relative;
+  overflow: hidden;
+}
+.btn-shine::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(115deg, transparent 35%, rgba(255, 255, 255, 0.35) 50%, transparent 65%);
+  transform: translateX(-120%);
+  transition: transform 650ms ease;
+}
+.btn-shine:hover::after {
+  transform: translateX(120%);
+}
+
+/* Login page: slow vertical drift for the floating dashboard-preview card. */
+@keyframes cynvexa-float-slow {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+.animate-float-slow {
+  animation: cynvexa-float-slow 6s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

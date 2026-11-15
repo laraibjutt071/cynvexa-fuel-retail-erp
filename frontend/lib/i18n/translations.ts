@@ -71,6 +71,17 @@ export const translations = {
   "login.feature.credit": { en: "Credit customer ledgers", ur: "Udhar Customer Ledger" },
   "login.feature.reports": { en: "Audit-ready reports", ur: "Audit ke liye Tayyar Reports" },
   "login.securityNote": { en: "Your data is encrypted and access is role-based.", ur: "Aap ka data encrypted hai aur access role ke mutabiq hai." },
+  "login.badge": { en: "Fuel Retail ERP", ur: "Fuel Retail ERP" },
+  "login.preview.heading": { en: "A glimpse of your dashboard", ur: "Aap ke dashboard ki aik jhalak" },
+  "login.preview.tankLevel": { en: "Tank Level", ur: "Tank Level" },
+  "login.preview.todaySales": { en: "Today's Sales", ur: "Aaj ki Sale" },
+  "login.preview.shiftStatus": { en: "Shift Status", ur: "Shift Status" },
+  "login.preview.statusOpen": { en: "Open", ur: "Open" },
+  "login.trust.encrypted": { en: "Encrypted", ur: "Encrypted" },
+  "login.trust.roleBased": { en: "Role-based Access", ur: "Role ke Mutabiq Access" },
+  "login.trust.auditReady": { en: "Audit-ready", ur: "Audit Ready" },
+  "login.emailPlaceholder": { en: "you@company.com", ur: "you@company.com" },
+  "login.passwordPlaceholder": { en: "Enter your password", ur: "Password Likhein" },
 
   // Registration
   "register.title": { en: "Set up your station on CYNVEXA", ur: "CYNVEXA par Apna Station Set Up Karein" },
