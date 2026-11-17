@@ -11,6 +11,8 @@ import { DateRangeFilter, defaultDateRange } from "@/components/DateRangeFilter"
 import { SalesOverTimeChart } from "@/components/charts/SalesOverTimeChart";
 import { VarianceTrendChart } from "@/components/charts/VarianceTrendChart";
 import { ReconciliationHistoryChart } from "@/components/charts/ReconciliationHistoryChart";
+import { RevenueDonut } from "@/components/charts/RevenueDonut";
+import { KpiStrip } from "@/components/dashboard/KpiStrip";
 import type {
   DailyFuelSalesDay,
   InventoryItemWithStock,
@@ -165,17 +167,57 @@ function DailyFuelSalesTab({
     })();
   }, [orgId, stationId, authFetch, qs]);
 
+  const gradeRevenue = new Map<string, number>();
+  let totalLitresAll = 0;
+  let totalRevenueAll = 0;
+  let totalTenderAll = 0;
+  let totalShifts = 0;
+  for (const d of days ?? []) {
+    totalShifts += d.shift_count;
+    totalTenderAll += Number(d.total_tender_amount);
+    for (const g of d.grades) {
+      totalLitresAll += Number(g.litres_sold);
+      totalRevenueAll += Number(g.expected_revenue);
+      gradeRevenue.set(g.fuel_grade_name, (gradeRevenue.get(g.fuel_grade_name) ?? 0) + Number(g.expected_revenue));
+    }
+  }
+  const dayCount = days?.length ?? 0;
+  const avgLitresPerDay = dayCount > 0 ? totalLitresAll / dayCount : 0;
+
   return (
-    <Card
-      title="Daily fuel sales and litres"
-      description="Derived from approved shifts' stock-ledger sale postings and expected revenue - never fabricated."
-      action={
-        <ExportButton
-          path={`/organizations/${orgId}/stations/${stationId}/reports/daily-fuel-sales/export?${qs}`}
-          filename="daily-fuel-sales.csv"
-        />
-      }
-    >
+    <div className="space-y-6">
+      {days && days.length > 0 && (
+        <>
+          <KpiStrip
+            title="Sales snapshot"
+            badge="live"
+            items={[
+              { label: "Total litres sold", value: `${totalLitresAll.toLocaleString()} L` },
+              { label: "Total expected revenue", value: totalRevenueAll.toFixed(2) },
+              { label: "Total tender received", value: totalTenderAll.toFixed(2) },
+              { label: "Approved shifts", value: String(totalShifts) },
+              { label: "Days in range", value: String(dayCount) },
+              { label: "Avg litres / day", value: avgLitresPerDay.toFixed(0) },
+            ]}
+          />
+          <RevenueDonut
+            title="Revenue by fuel grade"
+            centerLabel="total revenue"
+            data={Array.from(gradeRevenue, ([label, value]) => ({ label, value }))}
+          />
+        </>
+      )}
+
+      <Card
+        title="Daily fuel sales and litres"
+        description="Derived from approved shifts' stock-ledger sale postings and expected revenue - never fabricated."
+        action={
+          <ExportButton
+            path={`/organizations/${orgId}/stations/${stationId}/reports/daily-fuel-sales/export?${qs}`}
+            filename="daily-fuel-sales.csv"
+          />
+        }
+      >
       {error && <p className="text-sm text-danger-600">{error}</p>}
       {!days && !error && <p className="text-sm text-ink-soft">Loading…</p>}
       {days && days.length === 0 && <p className="text-sm text-ink-soft">No approved shifts in this range.</p>}
@@ -212,7 +254,8 @@ function DailyFuelSalesTab({
           </tbody>
         </table>
       )}
-    </Card>
+      </Card>
+    </div>
   );
 }
 

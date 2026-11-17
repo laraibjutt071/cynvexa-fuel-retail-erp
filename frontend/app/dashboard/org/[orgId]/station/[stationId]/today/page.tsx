@@ -16,6 +16,7 @@ import { KpiStrip } from "@/components/dashboard/KpiStrip";
 import { StockLevelBars } from "@/components/dashboard/StockLevelBars";
 import { CashCollectedCard } from "@/components/dashboard/CashCollectedCard";
 import { ModuleHealthGrid, type ModuleHealthItem } from "@/components/dashboard/ModuleHealthGrid";
+import { LiveTrendChart, type LiveTrendPoint } from "@/components/dashboard/LiveTrendChart";
 import type {
   CreditCustomerBalance,
   DailyFuelSalesDay,
@@ -107,6 +108,20 @@ export default function TodayOverviewPage() {
     load();
   }, [load]);
 
+  // Live dashboard: re-fetch today's real figures on an interval so the
+  // page reflects new shifts/sales/approvals without a manual reload.
+  // Only viewing today's own business date auto-refreshes - looking at a
+  // past date via the picker above would otherwise silently keep
+  // "live"-polling a day that can no longer change.
+  const isViewingToday = date === stationDateIso(stationTimezone);
+  useEffect(() => {
+    if (!isViewingToday) return;
+    const id = setInterval(load, 30000);
+    return () => clearInterval(id);
+  }, [load, isViewingToday]);
+
+  const [history, setHistory] = useState<LiveTrendPoint[]>([]);
+
   const totalLitres = sales?.total_litres_sold ?? "0.000";
   const totalSalesValue = sales?.total_expected_revenue ?? "0.00";
   const totalCollected = recon?.reduce((sum, r) => sum + Number(r.total_tender_amount), 0) ?? 0;
@@ -168,6 +183,20 @@ export default function TodayOverviewPage() {
     : [];
   const actionQueueRows: ActionQueueRow[] = moduleHealthItems.map((m) => ({ module: m.label, count: m.count, href: m.href }));
 
+  // Appends one point each time today's real sales/reconciliation data
+  // actually loads (initial load + every 30s poll above) - a genuine
+  // live trend of this session's own refreshes, never a simulated tick.
+  useEffect(() => {
+    if (!sales || !recon) return;
+    const point: LiveTrendPoint = {
+      time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      collected: totalCollected,
+      litres: Number(totalLitres),
+    };
+    setHistory((prev) => [...prev.slice(-19), point]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sales, recon]);
+
   return (
     <div className="mx-auto max-w-6xl space-y-6 px-4 py-6 sm:px-6 sm:py-8">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -207,6 +236,8 @@ export default function TodayOverviewPage() {
       )}
 
       <ActionQueueCard rows={actionQueueRows} />
+
+      <LiveTrendChart data={history} />
 
       <KpiStrip
         items={[

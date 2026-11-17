@@ -64,15 +64,28 @@ async def create_tank(
     return tank
 
 
-@router.get("", response_model=list[TankRead])
+@router.get("", response_model=list[TankStockRead])
 async def list_tanks(
     organization_id: uuid.UUID,
     station_id: uuid.UUID,
     current_user: User = Depends(require_permission(TANK_READ)),
     db: AsyncSession = Depends(get_db),
-) -> list[Tank]:
+) -> list[TankStockRead]:
     result = await db.execute(select(Tank).where(Tank.station_id == station_id))
-    return list(result.scalars().all())
+    tanks = list(result.scalars().all())
+    # Every screen that lists tanks (Today's Overview's stock gauges/bars,
+    # Station Config) already expects book_stock on each row - the single
+    # source of truth is still get_book_stock() (always ledger-derived,
+    # never a stored column), just computed per tank here too, not only
+    # on the single-tank detail endpoint.
+    return [
+        TankStockRead(
+            **TankRead.model_validate(tank).model_dump(),
+            book_stock=(book_stock := await get_book_stock(db, tank.id)),
+            safe_capacity_available=tank.safe_fill_limit - book_stock,
+        )
+        for tank in tanks
+    ]
 
 
 @router.get("/{tank_id}", response_model=TankStockRead)
