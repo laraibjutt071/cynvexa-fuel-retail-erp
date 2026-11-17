@@ -118,3 +118,8 @@ The brief's Section 16 phase list is reasonable, with one structural fork to res
 **Option B — Strengthen the existing shared-schema multi-tenancy instead.** Keep one database (what's actually running in production today), close the real gaps found in this audit (suspended-org enforcement, platform role granularity, a proper Tenant Management UI operating on `organization_id` rather than a separate connection), and get the same *user-facing* outcome (Super Admin manages tenants, each tenant is fully isolated, provisioning is instant with no new database to create) without the new operational risk or the missing API credential. This is what the already-proven isolation tests in Section 8 are built on.
 
 **This document does not choose between them.** That is the owner's call, consistent with the brief's own "do not blindly rewrite" instruction — recorded here as the one open question blocking Phase 2.
+
+### Decision (2026-11-17): Option B — strengthen shared-schema isolation
+
+The owner has chosen **Option B**. The production database stays as the single Neon database already live; no database-per-tenant migration proceeds. Phase 2 onward targets the real gaps found in this audit (Section 2's incomplete tenant registry, Section 8's unenforced suspension, Section 4's missing platform-role granularity and Tenant Management UI) within the existing, already-isolated architecture — delivering the brief's Super Admin / Tenant Owner experience without the unresolved Neon API-key dependency or the new per-tenant operational burden.
+
