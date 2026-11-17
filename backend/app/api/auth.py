@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Cookie, Depends, Request, Response
 from sqlalchemy import select
@@ -17,13 +17,10 @@ from app.core.security import (
     hash_refresh_token,
     verify_password,
 )
-from app.exceptions import AuthenticationError, ConflictError, ServiceUnavailableError
-from app.models.organization import Organization
-from app.models.plan import Plan
+from app.core.tenant_provisioning import provision_organization_with_owner
+from app.exceptions import AuthenticationError
 from app.models.refresh_token import RefreshToken
 from app.models.role import Role
-from app.models.station import Station
-from app.models.subscription import BillingCycle, Subscription, SubscriptionStatus
 from app.models.user import User
 from app.models.user_station_role import UserStationRole
 from app.schemas.auth import (
@@ -116,68 +113,33 @@ async def register(
     client_ip = request.client.host if request.client else "unknown"
     registration_limiter.check(client_ip)
 
-    existing = (await db.execute(select(User).where(User.email == payload.email))).scalar_one_or_none()
-    if existing is not None:
-        raise ConflictError("An account with this email already exists. Try logging in instead.")
-
-    owner_role = (await db.execute(select(Role).where(Role.name == "Owner"))).scalar_one_or_none()
-    if owner_role is None:
-        # Real operational state, not a user input error: permissions-roles was
-        # never seeded on this environment (see README's `python -m app.seed
-        # permissions-roles`).
-        raise ServiceUnavailableError("This CYNVEXA instance isn't fully set up yet. Please contact support.")
-
-    plan_code = payload.plan_code or "starter"
-    plan = (await db.execute(select(Plan).where(Plan.code == plan_code, Plan.is_active.is_(True)))).scalar_one_or_none()
-    if plan is None:
-        raise ServiceUnavailableError(f"The '{plan_code}' plan isn't available right now. Please contact support.")
-
-    user = User(email=payload.email, full_name=payload.full_name, hashed_password=hash_password(payload.password))
-    db.add(user)
-    await db.flush()
-
-    org = Organization(name=payload.company_name)
-    db.add(org)
-    await db.flush()
-
-    station = Station(organization_id=org.id, name=payload.station_name, code="ST-1")
-    db.add(station)
-    await db.flush()
-
-    db.add(UserStationRole(user_id=user.id, organization_id=org.id, station_id=None, role_id=owner_role.id))
-
-    now = datetime.now(timezone.utc)
-    trial_ends = now + timedelta(days=14)
-    db.add(
-        Subscription(
-            organization_id=org.id,
-            plan_id=plan.id,
-            status=SubscriptionStatus.TRIAL,
-            billing_cycle=BillingCycle.MONTHLY,
-            trial_ends_at=trial_ends,
-            current_period_start=now,
-            current_period_end=trial_ends,
-        )
+    tenant = await provision_organization_with_owner(
+        db,
+        company_name=payload.company_name,
+        owner_full_name=payload.full_name,
+        owner_email=payload.email,
+        owner_password=payload.password,
+        station_name=payload.station_name,
+        plan_code=payload.plan_code,
     )
-    await db.flush()
 
     await write_audit_log(
         db,
         action="organization.self_register",
         entity_type="Organization",
-        entity_id=str(org.id),
-        actor_user_id=user.id,
-        organization_id=org.id,
-        after={"name": org.name, "owner_email": user.email, "plan_code": plan.code},
+        entity_id=str(tenant.organization.id),
+        actor_user_id=tenant.owner.id,
+        organization_id=tenant.organization.id,
+        after={"name": tenant.organization.name, "owner_email": tenant.owner.email},
         ip_address=client_ip,
     )
 
-    tokens = await _issue_tokens(db, user, response)
+    tokens = await _issue_tokens(db, tenant.owner, response)
     return RegisterResponse(
         access_token=tokens.access_token,
         expires_in_minutes=tokens.expires_in_minutes,
-        organization_id=org.id,
-        station_id=station.id,
+        organization_id=tenant.organization.id,
+        station_id=tenant.station.id,
     )
 
 

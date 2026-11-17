@@ -1,7 +1,7 @@
 import uuid
 
-from fastapi import APIRouter, Depends, Request
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, Query, Request
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.common import get_organization_or_404
@@ -43,18 +43,38 @@ async def create_organization(
 
 @router.get("", response_model=list[OrganizationRead])
 async def list_organizations(
-    current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+    q: str | None = Query(default=None, max_length=200, description="Search by organization name"),
+    status: str | None = Query(default=None, pattern="^(active|suspended)$"),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ) -> list[Organization]:
     if current_user.is_superuser:
-        result = await db.execute(select(Organization))
+        stmt = select(Organization)
+        if q:
+            stmt = stmt.where(or_(Organization.name.ilike(f"%{q}%"), Organization.legal_name.ilike(f"%{q}%")))
+        if status == "active":
+            stmt = stmt.where(Organization.is_active.is_(True))
+        elif status == "suspended":
+            stmt = stmt.where(Organization.is_active.is_(False))
+        stmt = stmt.order_by(Organization.created_at.desc())
+        result = await db.execute(stmt)
         return list(result.scalars().all())
 
+    # A non-superuser's search/filter is for a future multi-org owner - today
+    # this is always at most a handful of rows, but the same q/status
+    # behavior applies for consistency rather than silently ignoring them.
     stmt = (
         select(Organization)
         .join(UserStationRole, UserStationRole.organization_id == Organization.id)
         .where(UserStationRole.user_id == current_user.id, UserStationRole.is_active.is_(True))
         .distinct()
     )
+    if q:
+        stmt = stmt.where(or_(Organization.name.ilike(f"%{q}%"), Organization.legal_name.ilike(f"%{q}%")))
+    if status == "active":
+        stmt = stmt.where(Organization.is_active.is_(True))
+    elif status == "suspended":
+        stmt = stmt.where(Organization.is_active.is_(False))
     result = await db.execute(stmt)
     return list(result.scalars().all())
 

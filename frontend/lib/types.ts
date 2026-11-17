@@ -18,8 +18,32 @@ export interface Organization {
   name: string;
   legal_name: string | null;
   is_active: boolean;
+  currency_code: string | null;
+  phone: string | null;
+  address: string | null;
+  city: string | null;
+  province: string | null;
+  country: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface PlatformStats {
+  total_organizations: number;
+  active_organizations: number;
+  suspended_organizations: number;
+  total_owners: number;
+  total_users: number;
+  recent_organizations: { id: string; name: string; is_active: boolean; created_at: string }[];
+  generated_at: string;
+}
+
+export interface TenantOnboardingResponse {
+  organization_id: string;
+  organization_name: string;
+  station_id: string;
+  owner_user_id: string;
+  owner_email: string;
 }
 
 export interface Plan {

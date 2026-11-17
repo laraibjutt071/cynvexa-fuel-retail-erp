@@ -8,20 +8,27 @@ app/api/organizations.py). Not exposed to regular organization users at all.
 """
 
 import uuid
+from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, Request
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, Query, Request
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import get_db, require_superuser
 from app.core.audit import write_audit_log
+from app.core.tenant_provisioning import provision_organization_with_owner
 from app.exceptions import ConflictError, NotFoundError
+from app.models.audit_log import AuditLog
+from app.models.organization import Organization
 from app.models.plan import Plan
 from app.models.subscription import Subscription
 from app.models.subscription_payment import SubscriptionPayment
 from app.models.user import User
+from app.models.user_station_role import UserStationRole
+from app.schemas.audit import AuditLogRead
+from app.schemas.organization import TenantOnboardingRequest, TenantOnboardingResponse
 from app.schemas.plan import PlanCreate, PlanRead, PlanUpdate
 from app.schemas.subscription import (
     SubscriptionCreate,
@@ -32,6 +39,122 @@ from app.schemas.subscription import (
 )
 
 router = APIRouter(prefix="/platform", tags=["platform"])
+
+
+# ---- Tenant onboarding ("Create Petrol Pump") ---------------------------------
+
+
+@router.post("/organizations", response_model=TenantOnboardingResponse, status_code=201)
+async def onboard_organization(
+    payload: TenantOnboardingRequest,
+    request: Request,
+    current_user: User = Depends(require_superuser),
+    db: AsyncSession = Depends(get_db),
+) -> TenantOnboardingResponse:
+    """The Super Admin 'Create Petrol Pump' workflow - provisions the
+    organization, its first station, the owner account, and the Owner role
+    assignment in one atomic call, via the exact same provisioning logic
+    /auth/register uses (app/core/tenant_provisioning.py). Unlike
+    self-registration, the caller (the platform admin) is never signed in
+    as the new owner - no tokens are issued here."""
+    tenant = await provision_organization_with_owner(
+        db,
+        company_name=payload.company_name,
+        owner_full_name=payload.owner_full_name,
+        owner_email=payload.owner_email,
+        owner_password=payload.owner_password,
+        station_name=payload.station_name,
+        plan_code=payload.plan_code,
+        phone=payload.phone,
+        address=payload.address,
+        city=payload.city,
+        province=payload.province,
+        country=payload.country,
+    )
+
+    await write_audit_log(
+        db,
+        action="organization.onboard_by_platform_admin",
+        entity_type="Organization",
+        entity_id=str(tenant.organization.id),
+        actor_user_id=current_user.id,
+        organization_id=tenant.organization.id,
+        after={"name": tenant.organization.name, "owner_email": tenant.owner.email},
+        ip_address=request.client.host if request.client else None,
+    )
+    await db.commit()
+
+    return TenantOnboardingResponse(
+        organization_id=tenant.organization.id,
+        organization_name=tenant.organization.name,
+        station_id=tenant.station.id,
+        owner_user_id=tenant.owner.id,
+        owner_email=tenant.owner.email,
+    )
+
+
+# ---- Platform dashboard: stats and activity -----------------------------------
+
+
+@router.get("/stats")
+async def platform_stats(
+    current_user: User = Depends(require_superuser),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Every number here is a real COUNT(*) against the actual tables a
+    platform admin would otherwise have to list and count by hand - never
+    a fabricated or cached figure."""
+    total_orgs = (await db.execute(select(func.count()).select_from(Organization))).scalar_one()
+    active_orgs = (
+        await db.execute(select(func.count()).select_from(Organization).where(Organization.is_active.is_(True)))
+    ).scalar_one()
+    suspended_orgs = total_orgs - active_orgs
+
+    # An "Owner" holds a station_id IS NULL (org-wide) UserStationRole - the
+    # same shape every Owner row has since app/core/tenant_provisioning.py
+    # creates it. Distinct user_id so one person can't inflate the count by
+    # somehow holding more than one such row.
+    owner_role_id_subq = select(func.count(func.distinct(UserStationRole.user_id))).where(
+        UserStationRole.station_id.is_(None), UserStationRole.is_active.is_(True)
+    )
+    total_owners = (await db.execute(owner_role_id_subq)).scalar_one()
+
+    total_users = (await db.execute(select(func.count()).select_from(User).where(User.is_superuser.is_(False)))).scalar_one()
+
+    recent_orgs_stmt = select(Organization).order_by(Organization.created_at.desc()).limit(5)
+    recent_orgs = (await db.execute(recent_orgs_stmt)).scalars().all()
+
+    return {
+        "total_organizations": total_orgs,
+        "active_organizations": active_orgs,
+        "suspended_organizations": suspended_orgs,
+        "total_owners": total_owners,
+        "total_users": total_users,
+        "recent_organizations": [
+            {
+                "id": str(o.id),
+                "name": o.name,
+                "is_active": o.is_active,
+                "created_at": o.created_at.isoformat(),
+            }
+            for o in recent_orgs
+        ],
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+@router.get("/audit-log", response_model=list[AuditLogRead])
+async def platform_audit_log(
+    limit: int = Query(default=50, ge=1, le=200),
+    current_user: User = Depends(require_superuser),
+    db: AsyncSession = Depends(get_db),
+) -> list[AuditLog]:
+    """Platform-wide recent activity, across every organization - the
+    org-scoped GET /organizations/{id}/audit-log already exists for a
+    tenant's own view; this is the same table, the platform-admin view of
+    everything at once, superuser-only."""
+    stmt = select(AuditLog).order_by(AuditLog.created_at.desc()).limit(limit)
+    return list((await db.execute(stmt)).scalars().all())
 
 # No auth at all - a prospective customer looking at the sign-up/pricing
 # page hasn't got an account yet. Deliberately a separate router/path from
