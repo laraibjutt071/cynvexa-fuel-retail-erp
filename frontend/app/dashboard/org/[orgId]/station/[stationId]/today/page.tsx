@@ -7,11 +7,10 @@ import { useAuth } from "@/lib/auth-context";
 import { useLanguage } from "@/lib/i18n/context";
 import { stationDateIso } from "@/lib/date";
 import { Card } from "@/components/Card";
-import { TankGauge } from "@/components/TankGauge";
-import { FuelStockChart } from "@/components/charts/FuelStockChart";
 import { LitresByGradeChart } from "@/components/charts/LitresByGradeChart";
-import { PaymentMethodBreakdownChart, type PaymentMethodSlice } from "@/components/charts/PaymentMethodBreakdownChart";
+import { type PaymentMethodSlice } from "@/components/charts/PaymentMethodBreakdownChart";
 import { ActionQueueCard, type ActionQueueRow } from "@/components/dashboard/ActionQueueCard";
+import { SectionHeading } from "@/components/dashboard/SectionHeading";
 import { KpiStrip } from "@/components/dashboard/KpiStrip";
 import { StockLevelBars } from "@/components/dashboard/StockLevelBars";
 import { CashCollectedCard } from "@/components/dashboard/CashCollectedCard";
@@ -145,7 +144,6 @@ export default function TodayOverviewPage() {
     if (!currentPriceByGrade.has(price.fuel_grade_id)) currentPriceByGrade.set(price.fuel_grade_id, price);
   }
   const gradeNameById = new Map(fuelGrades.map((g) => [g.id, g.name]));
-  const litresSoldByGrade = new Map((sales?.grades ?? []).map((g) => [g.fuel_grade_id, Number(g.litres_sold)]));
 
   const activeTenders = todaysTenders.filter((t) => !t.reversed_at);
   const methodById = new Map(paymentMethods.map((m) => [m.id, m]));
@@ -235,28 +233,24 @@ export default function TodayOverviewPage() {
         </div>
       )}
 
+      <SectionHeading>{t("today.sectionOverview")}</SectionHeading>
       <ActionQueueCard rows={actionQueueRows} />
-
       <LiveTrendChart data={history} />
-
       <KpiStrip
         items={[
           { label: t("today.fuelSoldToday"), value: sales ? `${totalLitres} L` : null },
           { label: t("today.salesValue"), value: sales ? totalSalesValue : null },
           { label: t("today.collected"), value: recon ? totalCollected.toFixed(2) : null },
+          { label: t("today.expectedCash"), value: recon ? expectedCash.toFixed(2) : null },
+          { label: t("today.actualCash"), value: recon ? actualCash.toFixed(2) : null },
           { label: t("today.shortageExcess"), value: recon ? shortageExcess.toFixed(2) : null },
           { label: t("today.outstandingCredit"), value: credit ? outstandingCredit.toFixed(2) : null },
+          { label: t("today.transactions"), value: recon ? String(transactionsCount) : null },
           { label: t("today.avgTransaction"), value: recon ? avgTransaction.toFixed(2) : null },
         ]}
       />
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
-        <MiniStat label={t("today.expectedCash")} value={expectedCash.toFixed(2)} />
-        <MiniStat label={t("today.actualCash")} value={actualCash.toFixed(2)} />
-        <MiniStat label={t("today.outstandingCredit")} value={outstandingCredit.toFixed(2)} />
-        <MiniStat label={t("today.transactions")} value={String(transactionsCount)} />
-        <MiniStat label={t("today.avgTransaction")} value={avgTransaction.toFixed(2)} />
-      </div>
 
+      <SectionHeading>{t("today.sectionOperations")}</SectionHeading>
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <StockLevelBars
           rows={(tanks ?? []).map((tank) => ({
@@ -268,44 +262,18 @@ export default function TodayOverviewPage() {
         />
         <CashCollectedCard data={paymentBreakdown} total={totalCollected} />
       </div>
-
       <ModuleHealthGrid items={moduleHealthItems} />
 
-      <Card title={t("today.tankLevels")} description={t("today.tankLevelsDescription")}>
-        {!tanks ? (
+      <SectionHeading>{t("today.sectionAnalytics")}</SectionHeading>
+      {sales && sales.grades.length > 0 ? (
+        <LitresByGradeChart grades={sales.grades} title={t("today.fuelSoldByProduct")} />
+      ) : (
+        <Card title={t("today.fuelSoldByProduct")}>
           <p className="text-sm text-ink-soft">{t("common.loading")}</p>
-        ) : tanks.length === 0 ? (
-          <p className="text-sm text-ink-soft">{t("today.noTanks")}</p>
-        ) : (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {tanks.map((tank) => {
-              const gradeLitresSold = litresSoldByGrade.get(tank.fuel_grade_id) ?? 0;
-              const stock = Number(tank.book_stock);
-              const daysRemaining = gradeLitresSold > 0 ? stock / gradeLitresSold : null;
-              return (
-                <TankGauge
-                  key={tank.id}
-                  code={tank.code}
-                  gradeName={gradeNameById.get(tank.fuel_grade_id) ?? "—"}
-                  stockLitres={stock}
-                  capacityLitres={Number(tank.capacity)}
-                  daysRemaining={daysRemaining}
-                  daysRemainingLabel={t("today.daysRemaining")}
-                />
-              );
-            })}
-          </div>
-        )}
-      </Card>
+        </Card>
+      )}
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        {tanks && tanks.length > 0 && <FuelStockChart tanks={tanks} title={t("today.fuelStockRemaining")} />}
-        {paymentBreakdown.length > 0 && (
-          <PaymentMethodBreakdownChart data={paymentBreakdown} title={t("today.paymentBreakdown")} />
-        )}
-      </div>
-      {sales && sales.grades.length > 0 && <LitresByGradeChart grades={sales.grades} title={t("today.fuelSoldByProduct")} />}
-
+      <SectionHeading>{t("today.sectionReference")}</SectionHeading>
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Card title={t("today.currentPrices")} description={t("today.currentPricesDescription")}>
           {fuelGrades.length === 0 ? (
@@ -351,29 +319,6 @@ export default function TodayOverviewPage() {
         </Card>
       </div>
 
-      {sales && sales.grades.length > 0 && (
-        <Card title={t("today.fuelSoldByProduct")}>
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border text-left text-ink-faint">
-                <th className="py-2 pr-2">Product</th>
-                <th className="py-2 pr-2">Litres</th>
-                <th className="py-2 pr-2">Value</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sales.grades.map((g) => (
-                <tr key={g.fuel_grade_id} className="border-b border-border/60">
-                  <td className="py-2 pr-2 text-ink">{g.fuel_grade_name}</td>
-                  <td className="py-2 pr-2 text-ink-soft">{g.litres_sold}</td>
-                  <td className="py-2 pr-2 text-ink-soft">{g.expected_revenue}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </Card>
-      )}
-
       <Card title={t("today.expensesRecordedToday")}>
         <p className="flex items-center gap-2 text-sm text-ink-soft">
           <Receipt className="h-4 w-4" aria-hidden />
@@ -382,15 +327,6 @@ export default function TodayOverviewPage() {
             : t("today.noExpensesPending")}
         </p>
       </Card>
-    </div>
-  );
-}
-
-function MiniStat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-lg border border-border bg-surface px-4 py-3">
-      <p className="text-xs text-ink-faint">{label}</p>
-      <p className="mt-1 text-lg font-semibold text-ink">{value}</p>
     </div>
   );
 }

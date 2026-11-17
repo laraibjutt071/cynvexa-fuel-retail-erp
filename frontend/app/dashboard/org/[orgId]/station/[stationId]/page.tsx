@@ -12,6 +12,7 @@ import { SalesOverTimeChart } from "@/components/charts/SalesOverTimeChart";
 import { VarianceTrendChart } from "@/components/charts/VarianceTrendChart";
 import { ReconciliationHistoryChart } from "@/components/charts/ReconciliationHistoryChart";
 import { RevenueDonut } from "@/components/charts/RevenueDonut";
+import { InventoryLevelsChart } from "@/components/charts/InventoryLevelsChart";
 import { KpiStrip } from "@/components/dashboard/KpiStrip";
 import type {
   DailyFuelSalesDay,
@@ -280,17 +281,37 @@ function TankVarianceTab({
     })();
   }, [orgId, stationId, authFetch, qs]);
 
+  const withinCount = rows?.filter((r) => r.within_tolerance === true).length ?? 0;
+  const outsideCount = rows?.filter((r) => r.within_tolerance === false).length ?? 0;
+  const variancePercents = (rows ?? [])
+    .map((r) => (r.closing_variance_percent === null ? null : Number(r.closing_variance_percent)))
+    .filter((v): v is number => v !== null);
+  const avgVariance = variancePercents.length > 0 ? variancePercents.reduce((s, v) => s + v, 0) / variancePercents.length : null;
+
   return (
-    <Card
-      title="Tank book-versus-physical variance"
-      description="Every approved shift's projected book stock against its own closing physical reading."
-      action={
-        <ExportButton
-          path={`/organizations/${orgId}/stations/${stationId}/reports/tank-variance/export?${qs}`}
-          filename="tank-variance.csv"
+    <div className="space-y-6">
+      {rows && rows.length > 0 && (
+        <KpiStrip
+          title="Variance snapshot"
+          badge="live"
+          items={[
+            { label: "Readings in range", value: String(rows.length) },
+            { label: "Within tolerance", value: String(withinCount) },
+            { label: "Outside tolerance", value: String(outsideCount) },
+            { label: "Average variance", value: avgVariance === null ? null : `${avgVariance.toFixed(2)}%` },
+          ]}
         />
-      }
-    >
+      )}
+      <Card
+        title="Tank book-versus-physical variance"
+        description="Every approved shift's projected book stock against its own closing physical reading."
+        action={
+          <ExportButton
+            path={`/organizations/${orgId}/stations/${stationId}/reports/tank-variance/export?${qs}`}
+            filename="tank-variance.csv"
+          />
+        }
+      >
       {!rows ? (
         <p className="text-sm text-ink-soft">Loading…</p>
       ) : rows.length === 0 ? (
@@ -334,7 +355,8 @@ function TankVarianceTab({
         </table>
         </>
       )}
-    </Card>
+      </Card>
+    </div>
   );
 }
 
@@ -361,17 +383,36 @@ function ReconciliationTab({
     })();
   }, [orgId, stationId, authFetch, qs]);
 
+  const totalExpected = rows?.reduce((s, r) => s + Number(r.expected_fuel_revenue), 0) ?? 0;
+  const totalTender = rows?.reduce((s, r) => s + Number(r.total_tender_amount), 0) ?? 0;
+  const totalShortageExcess = rows?.reduce((s, r) => s + Number(r.cash_shortage_excess), 0) ?? 0;
+  const needsAuthCount = rows?.filter((r) => r.requires_authorization && !r.authorized_at).length ?? 0;
+
   return (
-    <Card
-      title="Shift and cash reconciliation"
-      description="Persisted figures from each shift's own reconciliation record - expected revenue, tender, and shortage/excess."
-      action={
-        <ExportButton
-          path={`/organizations/${orgId}/stations/${stationId}/reports/shift-reconciliation/export?${qs}`}
-          filename="shift-reconciliation.csv"
+    <div className="space-y-6">
+      {rows && rows.length > 0 && (
+        <KpiStrip
+          title="Reconciliation snapshot"
+          badge="live"
+          items={[
+            { label: "Shifts in range", value: String(rows.length) },
+            { label: "Expected revenue", value: totalExpected.toFixed(2) },
+            { label: "Tender received", value: totalTender.toFixed(2) },
+            { label: "Shortage / excess", value: totalShortageExcess.toFixed(2) },
+            { label: "Needs authorization", value: String(needsAuthCount) },
+          ]}
         />
-      }
-    >
+      )}
+      <Card
+        title="Shift and cash reconciliation"
+        description="Persisted figures from each shift's own reconciliation record - expected revenue, tender, and shortage/excess."
+        action={
+          <ExportButton
+            path={`/organizations/${orgId}/stations/${stationId}/reports/shift-reconciliation/export?${qs}`}
+            filename="shift-reconciliation.csv"
+          />
+        }
+      >
       {!rows ? (
         <p className="text-sm text-ink-soft">Loading…</p>
       ) : rows.length === 0 ? (
@@ -417,7 +458,8 @@ function ReconciliationTab({
         </table>
         </>
       )}
-    </Card>
+      </Card>
+    </div>
   );
 }
 
@@ -487,8 +529,22 @@ function InventoryTab({
 
   const isAdjustment = form.movement_type.startsWith("adjustment");
 
+  const lowStockCount = items?.filter((it) => it.below_reorder_level).length ?? 0;
+
   return (
     <div className="space-y-6">
+      {items && items.length > 0 && (
+        <KpiStrip
+          title="Inventory snapshot"
+          badge="live"
+          items={[
+            { label: "Items tracked", value: String(items.length) },
+            { label: "Below reorder level", value: String(lowStockCount) },
+            { label: "Recent movements", value: movements ? String(movements.length) : null },
+          ]}
+        />
+      )}
+      {items && items.length > 0 && <InventoryLevelsChart items={items} title="On-hand stock by item" />}
       <Card title="On-hand stock" description="Always derived from the movement ledger, never hand-edited.">
         {!items ? (
           <p className="text-sm text-ink-soft">Loading…</p>

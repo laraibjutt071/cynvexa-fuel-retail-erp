@@ -154,6 +154,10 @@ export const translations = {
   "today.module.expenses": { en: "Expenses", ur: "Kharche" },
   "today.module.supplierPayments": { en: "Supplier Payments", ur: "Supplier Payments" },
   "today.module.inventory": { en: "Low Stock Items", ur: "Kam Stock Items" },
+  "today.sectionOverview": { en: "Overview", ur: "Khulasa" },
+  "today.sectionOperations": { en: "Operations", ur: "Operations" },
+  "today.sectionAnalytics": { en: "Analytics", ur: "Analytics" },
+  "today.sectionReference": { en: "Reference", ur: "Reference" },
 
   // Daily Entry workspace
   "dailyEntry.title": { en: "Daily Entry", ur: "Aaj ka Kaam" },
