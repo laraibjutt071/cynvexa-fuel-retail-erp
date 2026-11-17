@@ -15,12 +15,68 @@ async def test_create_organization_requires_name(client: AsyncClient, superuser)
 async def test_update_organization_partial_fields(client: AsyncClient, owner_user, org):
     token = await login(client, "owner@acmefuel-dev.com")
     resp = await client.patch(
-        f"/organizations/{org.id}", json={"is_active": False}, headers=auth_headers(token)
+        f"/organizations/{org.id}", json={"legal_name": "Acme Fuel Co Pvt Ltd"}, headers=auth_headers(token)
     )
     assert resp.status_code == 200
     body = resp.json()
-    assert body["is_active"] is False
+    assert body["legal_name"] == "Acme Fuel Co Pvt Ltd"
     assert body["name"] == "Acme Fuel Co"  # untouched field preserved
+
+
+async def test_owner_cannot_suspend_their_own_organization(client: AsyncClient, owner_user, org):
+    """Suspending/reactivating a tenant is a platform-admin action - an
+    Owner holds organization:update for their own profile fields, but
+    is_active specifically is reserved for require_superuser."""
+    token = await login(client, "owner@acmefuel-dev.com")
+    resp = await client.patch(
+        f"/organizations/{org.id}", json={"is_active": False}, headers=auth_headers(token)
+    )
+    assert resp.status_code == 403
+
+
+async def test_superuser_can_suspend_and_reactivate_organization(client: AsyncClient, superuser, org):
+    admin_token = await login(client, "platform-admin@cynvexa-platform-dev.com")
+    suspend = await client.patch(
+        f"/organizations/{org.id}", json={"is_active": False}, headers=auth_headers(admin_token)
+    )
+    assert suspend.status_code == 200
+    assert suspend.json()["is_active"] is False
+
+    reactivate = await client.patch(
+        f"/organizations/{org.id}", json={"is_active": True}, headers=auth_headers(admin_token)
+    )
+    assert reactivate.status_code == 200
+    assert reactivate.json()["is_active"] is True
+
+
+async def test_suspended_organization_blocks_member_access(client: AsyncClient, superuser, owner_user, org, station):
+    """The suspension must actually block access, not just sit unread in
+    the database - a real tenant-level kill switch, not a decorative flag."""
+    admin_token = await login(client, "platform-admin@cynvexa-platform-dev.com")
+    suspend = await client.patch(
+        f"/organizations/{org.id}", json={"is_active": False}, headers=auth_headers(admin_token)
+    )
+    assert suspend.status_code == 200
+
+    owner_token = await login(client, "owner@acmefuel-dev.com")
+    blocked = await client.get(
+        f"/organizations/{org.id}/stations/{station.id}", headers=auth_headers(owner_token)
+    )
+    assert blocked.status_code == 403
+
+    # A superuser is exempt, so the org can still be inspected/reactivated while suspended.
+    still_visible = await client.get(f"/organizations/{org.id}", headers=auth_headers(admin_token))
+    assert still_visible.status_code == 200
+
+    reactivate = await client.patch(
+        f"/organizations/{org.id}", json={"is_active": True}, headers=auth_headers(admin_token)
+    )
+    assert reactivate.status_code == 200
+
+    unblocked = await client.get(
+        f"/organizations/{org.id}/stations/{station.id}", headers=auth_headers(owner_token)
+    )
+    assert unblocked.status_code == 200
 
 
 async def test_get_nonexistent_organization_is_404_not_500(client: AsyncClient, superuser):

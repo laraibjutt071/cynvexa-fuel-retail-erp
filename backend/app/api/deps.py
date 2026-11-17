@@ -10,6 +10,7 @@ from app.core.permissions import user_has_permission
 from app.core.security import decode_access_token
 from app.database import get_db
 from app.exceptions import AuthenticationError, PermissionDeniedError, ValidationFailedError
+from app.models.organization import Organization
 from app.models.user import User
 
 __all__ = ["get_db", "get_current_user", "require_permission", "require_superuser"]
@@ -74,6 +75,24 @@ def require_permission(permission_code: str) -> Callable:
                 station_id = uuid.UUID(station_id_raw)
             except ValueError:
                 raise ValidationFailedError("Invalid station reference.")
+
+        # A suspended tenant cannot transact at all, regardless of what
+        # permission the caller otherwise holds - the platform admin's
+        # suspend action (Organization.is_active = False) must actually
+        # block access, not just sit unread in the database. A superuser
+        # is exempt so a platform admin can still inspect/reactivate a
+        # suspended organization. A nonexistent organization_id is left to
+        # whatever 404 the endpoint itself would raise - this check only
+        # ever turns an otherwise-allowed request into a 403, never
+        # changes 404 behavior.
+        if not current_user.is_superuser:
+            org = (
+                await db.execute(select(Organization.is_active).where(Organization.id == organization_id))
+            ).scalar_one_or_none()
+            if org is False:
+                raise PermissionDeniedError(
+                    "This organization has been suspended. Contact the platform administrator."
+                )
 
         allowed = current_user.is_superuser or await user_has_permission(
             db,

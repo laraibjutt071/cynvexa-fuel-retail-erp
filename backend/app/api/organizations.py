@@ -8,6 +8,7 @@ from app.api.common import get_organization_or_404
 from app.api.deps import get_current_user, get_db, require_permission, require_superuser
 from app.core.audit import write_audit_log
 from app.core.permission_codes import ORGANIZATION_READ, ORGANIZATION_UPDATE
+from app.exceptions import PermissionDeniedError
 from app.models.organization import Organization
 from app.models.user import User
 from app.models.user_station_role import UserStationRole
@@ -77,6 +78,14 @@ async def update_organization(
 ) -> Organization:
     org = await get_organization_or_404(db, organization_id)
     update_data = payload.model_dump(exclude_unset=True)
+    # Suspending/reactivating a tenant is a platform-admin action, not
+    # something an organization's own Owner can do to itself - an Owner
+    # holds organization:update for ordinary profile fields (name, legal
+    # name, currency), but is_active specifically is reserved for whoever
+    # holds require_superuser, same authority as creating a tenant in the
+    # first place.
+    if "is_active" in update_data and not current_user.is_superuser:
+        raise PermissionDeniedError("Only a platform administrator can suspend or reactivate an organization.")
     before = {field: getattr(org, field) for field in update_data}
 
     for field, value in update_data.items():
