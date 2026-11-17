@@ -15,5 +15,12 @@ class User(UUIDPKMixin, TimestampMixin, Base):
     # Platform-level administrator (CYNVEXA operator), not a station role. Only this flag
     # may create a new Organization — see app/core/permissions.py::require_superuser.
     is_superuser: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # Employee profile fields (Phase 4) - optional, display/HR-record only,
+    # no behavior depends on them. "Joining date" is deliberately not a
+    # column here - UserStationRole.created_at already answers it per
+    # organization.
+    employee_code: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    job_title: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    phone: Mapped[str | None] = mapped_column(String(30), nullable=True)
 
     station_roles: Mapped[list["UserStationRole"]] = relationship(back_populates="user")

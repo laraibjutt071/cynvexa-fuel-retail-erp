@@ -1,7 +1,7 @@
 import uuid
 
-from fastapi import APIRouter, Depends, Request
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, Query, Request
+from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -51,6 +51,9 @@ async def create_user(
         email=payload.email,
         full_name=payload.full_name,
         hashed_password=hash_password(payload.password),
+        employee_code=payload.employee_code,
+        job_title=payload.job_title,
+        phone=payload.phone,
     )
     db.add(user)
     try:
@@ -76,6 +79,9 @@ async def create_user(
 @router.get("", response_model=list[UserRead])
 async def list_users(
     organization_id: uuid.UUID,
+    q: str | None = Query(default=None, max_length=200, description="Search by name, email, or employee code"),
+    status: str | None = Query(default=None, pattern="^(active|inactive)$"),
+    station_id: uuid.UUID | None = Query(default=None, description="Only users with a role assignment at this station"),
     current_user: User = Depends(require_permission(USER_READ)),
     db: AsyncSession = Depends(get_db),
 ) -> list[User]:
@@ -85,6 +91,16 @@ async def list_users(
         .where(UserStationRole.organization_id == organization_id)
         .distinct()
     )
+    if q:
+        stmt = stmt.where(
+            or_(User.full_name.ilike(f"%{q}%"), User.email.ilike(f"%{q}%"), User.employee_code.ilike(f"%{q}%"))
+        )
+    if status == "active":
+        stmt = stmt.where(User.is_active.is_(True))
+    elif status == "inactive":
+        stmt = stmt.where(User.is_active.is_(False))
+    if station_id is not None:
+        stmt = stmt.where(UserStationRole.station_id == station_id)
     result = await db.execute(stmt)
     return list(result.scalars().all())
 
@@ -109,14 +125,14 @@ async def update_user(
     db: AsyncSession = Depends(get_db),
 ) -> User:
     user = await _get_org_user_or_404(db, organization_id, user_id)
-    before = {"full_name": user.full_name, "is_active": user.is_active}
-
     update_data = payload.model_dump(exclude_unset=True)
+    before = {field: getattr(user, field) for field in update_data}
+
     for field, value in update_data.items():
         setattr(user, field, value)
     await db.flush()
 
-    after = {"full_name": user.full_name, "is_active": user.is_active}
+    after = {field: getattr(user, field) for field in update_data}
     await write_audit_log(
         db,
         action="user.update",

@@ -4,6 +4,7 @@ import {
   AlertTriangle,
   BarChart3,
   Banknote,
+  Building2,
   CheckSquare,
   ClipboardList,
   CreditCard,
@@ -20,6 +21,7 @@ import {
   ShoppingCart,
   Truck,
   UserCheck,
+  UserCog,
   Wallet,
   X,
 } from "lucide-react";
@@ -212,6 +214,24 @@ export function AppShell({ children }: { children: ReactNode }) {
           >
             <ShieldCheck className="h-4.5 w-4.5" aria-hidden />
             Platform Admin
+          </Link>
+        )}
+        {can(["user:read"]) && (
+          <Link
+            href={`/dashboard/org/${orgId}/staff`}
+            className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-ink-soft hover:bg-surface-elevated hover:text-ink"
+          >
+            <UserCog className="h-4.5 w-4.5" aria-hidden />
+            Staff
+          </Link>
+        )}
+        {can(["station:read"]) && (
+          <Link
+            href={`/dashboard/org/${orgId}/stations`}
+            className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-ink-soft hover:bg-surface-elevated hover:text-ink"
+          >
+            <Building2 className="h-4.5 w-4.5" aria-hidden />
+            Stations
           </Link>
         )}
         {can(["user:read"]) && (

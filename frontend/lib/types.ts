@@ -101,6 +101,9 @@ export interface OrgUser {
   email: string;
   full_name: string;
   is_active: boolean;
+  employee_code: string | null;
+  job_title: string | null;
+  phone: string | null;
   created_at: string;
 }
 
@@ -125,6 +128,7 @@ export interface RoleAssignment {
   station_id: string | null;
   role_id: string;
   is_active: boolean;
+  created_at: string;
 }
 
 export interface Station {

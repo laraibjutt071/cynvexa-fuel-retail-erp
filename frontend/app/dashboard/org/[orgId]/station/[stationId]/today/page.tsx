@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, Receipt, Truck } from "lucide-react";
+import { AlertTriangle, Receipt, Truck, Clock, UserCheck } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
@@ -17,12 +17,14 @@ import { CashCollectedCard } from "@/components/dashboard/CashCollectedCard";
 import { ModuleHealthGrid, type ModuleHealthItem } from "@/components/dashboard/ModuleHealthGrid";
 import { LiveTrendChart, type LiveTrendPoint } from "@/components/dashboard/LiveTrendChart";
 import type {
+  AttendanceRecord,
   CreditCustomerBalance,
   DailyFuelSalesDay,
   FuelGrade,
   FuelPrice,
   PaymentMethod,
   PendingApprovalsReport,
+  Shift,
   ShiftReconciliationReportRow,
   ShiftTender,
   Tank,
@@ -58,21 +60,40 @@ export default function TodayOverviewPage() {
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
   const [todaysTenders, setTodaysTenders] = useState<ShiftTender[]>([]);
   const [lastReceipt, setLastReceipt] = useState<TankerReceipt | null>(null);
+  const [openShifts, setOpenShifts] = useState<Shift[] | null>(null);
+  const [attendanceToday, setAttendanceToday] = useState<AttendanceRecord[] | null>(null);
 
   const load = useCallback(async () => {
     const stationBase = `/organizations/${orgId}/stations/${stationId}`;
-    const [salesResp, reconResp, pendingResp, tanksResp, creditResp, gradesResp, pricesResp, methodsResp, receiptsResp] =
-      await Promise.all([
-        authFetch(`${stationBase}/reports/daily-fuel-sales?date_from=${date}&date_to=${date}`),
-        authFetch(`${stationBase}/reports/shift-reconciliation?date_from=${date}&date_to=${date}`),
-        authFetch(`/organizations/${orgId}/reports/pending-approvals`),
-        authFetch(`${stationBase}/tanks`),
-        authFetch(`/organizations/${orgId}/credit-customers/balances`),
-        authFetch(`/organizations/${orgId}/fuel-grades`),
-        authFetch(`${stationBase}/fuel-prices`),
-        authFetch(`/organizations/${orgId}/payment-methods`),
-        authFetch(`${stationBase}/tanker-receipts`),
-      ]);
+    const [
+      salesResp,
+      reconResp,
+      pendingResp,
+      tanksResp,
+      creditResp,
+      gradesResp,
+      pricesResp,
+      methodsResp,
+      receiptsResp,
+      shiftsResp,
+      attendanceResp,
+    ] = await Promise.all([
+      authFetch(`${stationBase}/reports/daily-fuel-sales?date_from=${date}&date_to=${date}`),
+      authFetch(`${stationBase}/reports/shift-reconciliation?date_from=${date}&date_to=${date}`),
+      authFetch(`/organizations/${orgId}/reports/pending-approvals`),
+      authFetch(`${stationBase}/tanks`),
+      authFetch(`/organizations/${orgId}/credit-customers/balances`),
+      authFetch(`/organizations/${orgId}/fuel-grades`),
+      authFetch(`${stationBase}/fuel-prices`),
+      authFetch(`/organizations/${orgId}/payment-methods`),
+      authFetch(`${stationBase}/tanker-receipts`),
+      authFetch(`${stationBase}/shifts?status=open`),
+      authFetch(`${stationBase}/attendance?date_from=${date}&date_to=${date}`),
+    ]);
+    // Attendance is a permission (attendance:read) not every role holds -
+    // a 403 here just means "don't show this widget," never an error.
+    setAttendanceToday(attendanceResp.ok ? await attendanceResp.json() : null);
+    setOpenShifts(shiftsResp.ok ? await shiftsResp.json() : null);
     if (salesResp.ok) {
       const days: DailyFuelSalesDay[] = await salesResp.json();
       setSales(days[0] ?? null);
@@ -262,6 +283,64 @@ export default function TodayOverviewPage() {
         />
         <CashCollectedCard data={paymentBreakdown} total={totalCollected} />
       </div>
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <Card title="Current shift status">
+          {!openShifts ? (
+            <p className="text-sm text-ink-soft">{t("common.loading")}</p>
+          ) : openShifts.length === 0 ? (
+            <p className="text-sm text-ink-soft">No shift is currently open at this station.</p>
+          ) : (
+            <ul className="space-y-2">
+              {openShifts.map((s) => (
+                <li key={s.id} className="flex items-center gap-3 rounded-lg border border-border px-3 py-2.5">
+                  <Clock className="h-4 w-4 flex-shrink-0 text-accent" aria-hidden />
+                  <div>
+                    <p className="text-sm text-ink">{s.label ?? "Shift"}</p>
+                    <p className="text-xs text-ink-faint">Opened {new Date(s.opened_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+
+        {attendanceToday && (
+          <Card title="Attendance today">
+            {attendanceToday.length === 0 ? (
+              <p className="text-sm text-ink-soft">No attendance recorded yet for today.</p>
+            ) : (
+              <div className="flex items-center gap-4">
+                <AttendanceStat label="Present" count={attendanceToday.filter((a) => a.status === "present").length} tone="text-success-600" />
+                <AttendanceStat label="Late" count={attendanceToday.filter((a) => a.status === "late").length} tone="text-warning-600" />
+                <AttendanceStat label="Absent" count={attendanceToday.filter((a) => a.status === "absent").length} tone="text-danger-600" />
+                <AttendanceStat label="On leave" count={attendanceToday.filter((a) => a.status === "leave").length} tone="text-ink-soft" />
+              </div>
+            )}
+          </Card>
+        )}
+      </div>
+
+      {activeTenders.length > 0 && (
+        <Card title="Recent transactions">
+          <ul className="divide-y divide-border">
+            {activeTenders
+              .slice()
+              .sort((a, b) => new Date(b.recorded_at).getTime() - new Date(a.recorded_at).getTime())
+              .slice(0, 8)
+              .map((tx) => (
+                <li key={tx.id} className="flex items-center justify-between py-2 text-sm">
+                  <span className="text-ink">{methodById.get(tx.payment_method_id)?.name ?? "Payment"}</span>
+                  <span className="flex items-baseline gap-2">
+                    <span className="font-medium tabular-nums text-ink">{Number(tx.amount).toFixed(2)}</span>
+                    <span className="text-xs text-ink-faint">{new Date(tx.recorded_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+                  </span>
+                </li>
+              ))}
+          </ul>
+        </Card>
+      )}
+
       <ModuleHealthGrid items={moduleHealthItems} />
 
       <SectionHeading>{t("today.sectionAnalytics")}</SectionHeading>
@@ -327,6 +406,15 @@ export default function TodayOverviewPage() {
             : t("today.noExpensesPending")}
         </p>
       </Card>
+    </div>
+  );
+}
+
+function AttendanceStat({ label, count, tone }: { label: string; count: number; tone: string }) {
+  return (
+    <div>
+      <p className={`text-xl font-semibold tabular-nums ${tone}`}>{count}</p>
+      <p className="text-xs text-ink-faint">{label}</p>
     </div>
   );
 }
