@@ -30,6 +30,7 @@ import { useAuth } from "@/lib/auth-context";
 import { usePermissions } from "@/lib/permissions";
 import { useLanguage } from "@/lib/i18n/context";
 import type { TranslationKey } from "@/lib/i18n/translations";
+import { ThemeToggleIcon, ThemeToggleRow } from "@/components/ui/ThemeToggle";
 
 interface NavItem {
   labelKey: TranslationKey;
@@ -242,6 +243,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             {language === "en" ? "EN" : "UR"}
           </span>
         </button>
+        <ThemeToggleRow />
       </div>
       <div className="border-t border-border px-3 py-3">
         <div className="flex items-center gap-3 px-3">
@@ -298,7 +300,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             <Menu className="h-5 w-5" />
           </button>
           <span className="text-sm font-semibold text-ink">CYNVEXA</span>
-          <span className="w-9" />
+          <ThemeToggleIcon />
         </header>
         <main className="flex-1">{children}</main>
       </div>

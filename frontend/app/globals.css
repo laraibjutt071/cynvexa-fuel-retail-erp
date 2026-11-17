@@ -56,6 +56,68 @@
   --color-danger-600: #ef4444; /* reserved for real errors/discrepancies */
 }
 
+/* Light theme - opt-in via [data-theme="light"] on <html>, set by
+ * lib/theme-context.tsx and persisted to localStorage. Dark stays the
+ * default (no attribute) so every existing screen is unaffected unless
+ * a viewer explicitly switches. Every token below mirrors one declared
+ * on :root above - same name, light-appropriate value - so every
+ * existing bg-surface/text-ink/etc. utility just works without being
+ * touched anywhere else in the app. */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --background: #f3f5f9;
+  --foreground: #0f172a;
+
+  --color-sidebar: #ffffff;
+  --color-surface: #ffffff;
+  --color-surface-elevated: #f1f5f9;
+  --color-surface-muted: #f8fafc;
+  --color-border: #e2e8f0;
+
+  --color-ink: #0f172a;
+  --color-ink-soft: #475569;
+  --color-ink-faint: #94a3b8;
+
+  --color-brand-50: rgba(37, 99, 235, 0.07);
+  --color-brand-100: rgba(37, 99, 235, 0.12);
+  --color-brand-200: rgba(37, 99, 235, 0.2);
+  --color-brand-400: #3b82f6;
+  --color-brand-500: #2563eb;
+  --color-brand-600: #1d4ed8;
+  --color-brand-700: #1e40af;
+
+  --color-accent: #0284c7;
+
+  --color-success-50: rgba(34, 197, 94, 0.08);
+  --color-success-100: rgba(34, 197, 94, 0.16);
+  --color-success-600: #16a34a;
+
+  --color-warning-50: rgba(245, 158, 11, 0.08);
+  --color-warning-100: rgba(245, 158, 11, 0.16);
+  --color-warning-600: #d97706;
+
+  --color-caution-50: rgba(251, 146, 60, 0.08);
+  --color-caution-100: rgba(251, 146, 60, 0.16);
+  --color-caution-600: #ea580c;
+
+  --color-danger-50: rgba(239, 68, 68, 0.08);
+  --color-danger-100: rgba(239, 68, 68, 0.16);
+  --color-danger-600: #dc2626;
+}
+
+:root[data-theme="light"] .card-glow {
+  box-shadow:
+    0 0 0 1px var(--color-border),
+    0 8px 24px -12px rgba(15, 23, 42, 0.12),
+    0 2px 8px -4px rgba(15, 23, 42, 0.06);
+}
+:root[data-theme="light"] .card-glow:hover {
+  box-shadow:
+    0 0 0 1px var(--color-border),
+    0 14px 32px -12px rgba(15, 23, 42, 0.16),
+    0 4px 12px -4px rgba(15, 23, 42, 0.08);
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);

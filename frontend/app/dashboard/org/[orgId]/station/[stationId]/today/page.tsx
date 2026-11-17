@@ -1,27 +1,21 @@
 "use client";
 
-import {
-  AlertTriangle,
-  Banknote,
-  CheckSquare,
-  CreditCard,
-  Fuel,
-  Receipt,
-  ShoppingCart,
-  Truck,
-  Wallet,
-} from "lucide-react";
+import { AlertTriangle, Receipt, Truck } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { useLanguage } from "@/lib/i18n/context";
 import { stationDateIso } from "@/lib/date";
 import { Card } from "@/components/Card";
-import { StatCard, StatCardGrid } from "@/components/ui/StatCard";
 import { TankGauge } from "@/components/TankGauge";
 import { FuelStockChart } from "@/components/charts/FuelStockChart";
 import { LitresByGradeChart } from "@/components/charts/LitresByGradeChart";
 import { PaymentMethodBreakdownChart, type PaymentMethodSlice } from "@/components/charts/PaymentMethodBreakdownChart";
+import { ActionQueueCard, type ActionQueueRow } from "@/components/dashboard/ActionQueueCard";
+import { KpiStrip } from "@/components/dashboard/KpiStrip";
+import { StockLevelBars } from "@/components/dashboard/StockLevelBars";
+import { CashCollectedCard } from "@/components/dashboard/CashCollectedCard";
+import { ModuleHealthGrid, type ModuleHealthItem } from "@/components/dashboard/ModuleHealthGrid";
 import type {
   CreditCustomerBalance,
   DailyFuelSalesDay,
@@ -153,6 +147,27 @@ export default function TodayOverviewPage() {
   const transactionsCount = activeTenders.length;
   const avgTransaction = transactionsCount > 0 ? totalCollected / transactionsCount : 0;
 
+  const overviewHref = `/dashboard/org/${orgId}?tab=overview`;
+  const purchasesHref = `/dashboard/org/${orgId}/station/${stationId}/purchases`;
+  const readingCorrectionsHref = `/dashboard/org/${orgId}/station/${stationId}/reading-corrections`;
+
+  // Every row's count comes straight from PendingApprovalsReport - the
+  // same real, server-computed numbers the Approvals & Alerts page
+  // uses - never estimated here.
+  const moduleHealthItems: ModuleHealthItem[] = pending
+    ? [
+        { key: "deliveries", label: t("today.module.deliveries"), count: pending.tanker_receipts_awaiting_approval, href: purchasesHref },
+        { key: "shifts", label: t("today.module.shifts"), count: pending.shifts_awaiting_approval, href: overviewHref },
+        { key: "meterEvents", label: t("today.module.meterEvents"), count: pending.unapproved_meter_events, href: readingCorrectionsHref },
+        { key: "cashDiscrepancies", label: t("today.module.cashDiscrepancies"), count: pending.reconciliations_requiring_authorization, href: overviewHref },
+        { key: "cashMovements", label: t("today.module.cashMovements"), count: pending.unapproved_decreasing_cash_movements, href: overviewHref },
+        { key: "expenses", label: t("today.module.expenses"), count: pending.pending_expenses, href: `/dashboard/org/${orgId}?tab=expenses` },
+        { key: "supplierPayments", label: t("today.module.supplierPayments"), count: pending.unapproved_supplier_payments, href: overviewHref },
+        { key: "inventory", label: t("today.module.inventory"), count: pending.low_stock_inventory_items, href: overviewHref },
+      ]
+    : [];
+  const actionQueueRows: ActionQueueRow[] = moduleHealthItems.map((m) => ({ module: m.label, count: m.count, href: m.href }));
+
   return (
     <div className="mx-auto max-w-6xl space-y-6 px-4 py-6 sm:px-6 sm:py-8">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -191,17 +206,18 @@ export default function TodayOverviewPage() {
         </div>
       )}
 
-      <StatCardGrid>
-        <StatCard icon={Fuel} label={t("today.fuelSoldToday")} value={`${totalLitres} L`} tone="brand" subtitle={t("today.revenueNotProfit")} />
-        <StatCard icon={ShoppingCart} label={t("today.salesValue")} value={totalSalesValue} tone="success" />
-        <StatCard icon={Wallet} label={t("today.collected")} value={totalCollected.toFixed(2)} tone="brand" />
-        <StatCard
-          icon={Banknote}
-          label={t("today.shortageExcess")}
-          value={shortageExcess.toFixed(2)}
-          tone={Math.abs(shortageExcess) < 0.01 ? "neutral" : shortageExcess < 0 ? "danger" : "warning"}
-        />
-      </StatCardGrid>
+      <ActionQueueCard rows={actionQueueRows} />
+
+      <KpiStrip
+        items={[
+          { label: t("today.fuelSoldToday"), value: sales ? `${totalLitres} L` : null },
+          { label: t("today.salesValue"), value: sales ? totalSalesValue : null },
+          { label: t("today.collected"), value: recon ? totalCollected.toFixed(2) : null },
+          { label: t("today.shortageExcess"), value: recon ? shortageExcess.toFixed(2) : null },
+          { label: t("today.outstandingCredit"), value: credit ? outstandingCredit.toFixed(2) : null },
+          { label: t("today.avgTransaction"), value: recon ? avgTransaction.toFixed(2) : null },
+        ]}
+      />
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
         <MiniStat label={t("today.expectedCash")} value={expectedCash.toFixed(2)} />
         <MiniStat label={t("today.actualCash")} value={actualCash.toFixed(2)} />
@@ -209,6 +225,20 @@ export default function TodayOverviewPage() {
         <MiniStat label={t("today.transactions")} value={String(transactionsCount)} />
         <MiniStat label={t("today.avgTransaction")} value={avgTransaction.toFixed(2)} />
       </div>
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <StockLevelBars
+          rows={(tanks ?? []).map((tank) => ({
+            code: tank.code,
+            gradeName: gradeNameById.get(tank.fuel_grade_id) ?? "—",
+            stockLitres: Number(tank.book_stock),
+            capacityLitres: Number(tank.capacity),
+          }))}
+        />
+        <CashCollectedCard data={paymentBreakdown} total={totalCollected} />
+      </div>
+
+      <ModuleHealthGrid items={moduleHealthItems} />
 
       <Card title={t("today.tankLevels")} description={t("today.tankLevelsDescription")}>
         {!tanks ? (
