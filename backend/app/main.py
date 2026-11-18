@@ -18,6 +18,7 @@ from app.api import (
     fuel_grades,
     fuel_prices,
     health,
+    invitations,
     inventory_items,
     inventory_movements,
     nozzle_overview,
@@ -168,6 +169,8 @@ def create_app() -> FastAPI:
     app.include_router(attendance.payroll_router)
     app.include_router(platform.router)
     app.include_router(platform.public_router)
+    app.include_router(invitations.router)
+    app.include_router(invitations.public_router)
     app.include_router(subscriptions.router)
 
     return app

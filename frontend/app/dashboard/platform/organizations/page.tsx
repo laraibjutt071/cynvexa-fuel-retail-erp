@@ -9,11 +9,11 @@ import { Button } from "@/components/ui/Button";
 import { Select, TextInput } from "@/components/ui/Field";
 import { Badge } from "@/components/ui/Badge";
 import { DataTable, type Column } from "@/components/ui/DataTable";
-import type { Organization } from "@/lib/types";
+import type { PlatformOrganizationRow } from "@/lib/types";
 
 export default function OrganizationsListPage() {
   const { authFetch } = useAuth();
-  const [orgs, setOrgs] = useState<Organization[] | null>(null);
+  const [orgs, setOrgs] = useState<PlatformOrganizationRow[] | null>(null);
   const [q, setQ] = useState("");
   const [status, setStatus] = useState<"" | "active" | "suspended">("");
 
@@ -21,7 +21,7 @@ export default function OrganizationsListPage() {
     const params = new URLSearchParams();
     if (q) params.set("q", q);
     if (status) params.set("status", status);
-    const resp = await authFetch(`/organizations?${params.toString()}`);
+    const resp = await authFetch(`/platform/organizations?${params.toString()}`);
     if (resp.ok) setOrgs(await resp.json());
   }, [authFetch, q, status]);
 
@@ -30,7 +30,7 @@ export default function OrganizationsListPage() {
     return () => clearTimeout(id);
   }, [load]);
 
-  const columns: Column<Organization>[] = [
+  const columns: Column<PlatformOrganizationRow>[] = [
     {
       key: "name",
       header: "Organization",
@@ -42,7 +42,26 @@ export default function OrganizationsListPage() {
         </Link>
       ),
     },
-    { key: "location", header: "Location", render: (o) => [o.city, o.country].filter(Boolean).join(", ") || "—" },
+    {
+      key: "owner",
+      header: "Owner",
+      render: (o) => (
+        <div>
+          <p className="text-ink">{o.owner_full_name ?? "—"}</p>
+          {o.owner_email && <p className="text-xs text-ink-faint">{o.owner_email}</p>}
+        </div>
+      ),
+    },
+    { key: "location", header: "Location", render: (o) => [o.city].filter(Boolean).join(", ") || "—" },
+    { key: "station_count", header: "Stations", sortable: true, sortValue: (o) => o.station_count, render: (o) => o.station_count },
+    { key: "employee_count", header: "Employees", sortable: true, sortValue: (o) => o.employee_count, render: (o) => o.employee_count },
+    {
+      key: "last_activity_at",
+      header: "Last activity",
+      sortable: true,
+      sortValue: (o) => o.last_activity_at ?? "",
+      render: (o) => (o.last_activity_at ? new Date(o.last_activity_at).toLocaleDateString() : "—"),
+    },
     { key: "status", header: "Status", render: (o) => <Badge tone={o.is_active ? "success" : "danger"}>{o.is_active ? "Active" : "Suspended"}</Badge> },
     {
       key: "created_at",

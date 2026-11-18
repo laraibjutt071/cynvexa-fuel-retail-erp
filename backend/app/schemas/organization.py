@@ -66,3 +66,20 @@ class TenantOnboardingResponse(BaseModel):
     station_id: uuid.UUID
     owner_user_id: uuid.UUID
     owner_email: str
+
+
+class PlatformOrganizationRow(BaseModel):
+    """The Super Admin client-directory row (Phase 5c) - owner, counts,
+    and activity, aggregated server-side so the directory never has to
+    N+1 per organization on the frontend."""
+
+    id: uuid.UUID
+    name: str
+    city: str | None
+    is_active: bool
+    created_at: datetime
+    owner_full_name: str | None
+    owner_email: str | None
+    station_count: int
+    employee_count: int
+    last_activity_at: datetime | None

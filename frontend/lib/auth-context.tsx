@@ -35,6 +35,9 @@ interface AuthContextValue {
    * caller as its Owner, and a trial subscription, then signs them in.
    * Returns the new org/station ids so the caller can redirect directly. */
   register: (input: RegisterInput) => Promise<{ organizationId: string; stationId: string }>;
+  /** Accepts an invitation token, creating the invited user's account and
+   * signing them in - mirrors `register`'s token handling. */
+  acceptInvitation: (token: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   /** Fetch wrapper that attaches the current access token and retries once
    * after a silent refresh if the server says the token is no longer valid. */
@@ -103,6 +106,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [fetchMe]
   );
 
+  const acceptInvitation = useCallback(
+    async (token: string, password: string) => {
+      const body = await apiJson<AccessTokenResponse>("/invitations/accept", {
+        method: "POST",
+        body: JSON.stringify({ token, password }),
+      });
+      accessTokenRef.current = body.access_token;
+      setUser(await fetchMe(body.access_token));
+    },
+    [fetchMe]
+  );
+
   const logout = useCallback(async () => {
     await apiFetch("/auth/logout", { method: "POST" });
     accessTokenRef.current = null;
@@ -132,7 +147,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout, authFetch }}>
+    <AuthContext.Provider value={{ user, loading, login, register, acceptInvitation, logout, authFetch }}>
       {children}
     </AuthContext.Provider>
   );

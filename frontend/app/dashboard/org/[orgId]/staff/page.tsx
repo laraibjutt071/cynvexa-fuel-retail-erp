@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { Plus, Search, UserPlus } from "lucide-react";
+import { Check, Copy, Mail, Plus, Search, UserPlus, X } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { usePermissions } from "@/lib/permissions";
 import { useToast } from "@/components/ui/Toast";
@@ -15,7 +15,7 @@ import { DataTable, type Column } from "@/components/ui/DataTable";
 import { Dialog } from "@/components/ui/Dialog";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ApiError } from "@/lib/api";
-import type { OrgUser, Role, Station } from "@/lib/types";
+import type { Invitation, InvitationCreateResponse, OrgUser, Role, Station } from "@/lib/types";
 
 type AuthFetch = ReturnType<typeof useAuth>["authFetch"];
 
@@ -32,6 +32,18 @@ export default function StaffPage() {
   const [status, setStatus] = useState<"" | "active" | "inactive">("");
   const [stationFilter, setStationFilter] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [invitations, setInvitations] = useState<Invitation[] | null>(null);
+
+  const loadInvitations = useCallback(async () => {
+    const resp = await authFetch(`/organizations/${orgId}/invitations`);
+    if (resp.ok) setInvitations(await resp.json());
+  }, [authFetch, orgId]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadInvitations();
+  }, [loadInvitations]);
 
   const load = useCallback(async () => {
     const params = new URLSearchParams();
@@ -98,12 +110,30 @@ export default function StaffPage() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm text-ink-soft">Everyone with access to this organization.</p>
           {can("user:create") && (
-            <Button onClick={() => setCreateOpen(true)}>
-              <UserPlus className="h-4 w-4" aria-hidden />
-              Add employee
-            </Button>
+            <div className="flex gap-2">
+              <Button variant="secondary" onClick={() => setCreateOpen(true)}>
+                <UserPlus className="h-4 w-4" aria-hidden />
+                Add directly
+              </Button>
+              <Button onClick={() => setInviteOpen(true)}>
+                <Mail className="h-4 w-4" aria-hidden />
+                Invite employee
+              </Button>
+            </div>
           )}
         </div>
+
+        {can("user:create") && invitations && invitations.filter((i) => !i.accepted_at && !i.revoked_at).length > 0 && (
+          <Card title="Pending invitations" description="Not yet accepted - share the link again if needed, or revoke it.">
+            <ul className="divide-y divide-border">
+              {invitations
+                .filter((i) => !i.accepted_at && !i.revoked_at)
+                .map((inv) => (
+                  <PendingInvitationRow key={inv.id} invitation={inv} orgId={orgId} authFetch={authFetch} onChanged={loadInvitations} />
+                ))}
+            </ul>
+          </Card>
+        )}
 
         <Card title="All employees">
           <div className="mb-4 flex flex-wrap items-center gap-3">
@@ -142,7 +172,216 @@ export default function StaffPage() {
         stations={stations}
         onCreated={load}
       />
+
+      <InviteEmployeeDialog
+        open={inviteOpen}
+        onClose={() => setInviteOpen(false)}
+        orgId={orgId}
+        authFetch={authFetch}
+        roles={roles}
+        stations={stations}
+        onInvited={loadInvitations}
+      />
     </main>
+  );
+}
+
+function PendingInvitationRow({
+  invitation,
+  orgId,
+  authFetch,
+  onChanged,
+}: {
+  invitation: Invitation;
+  orgId: string;
+  authFetch: AuthFetch;
+  onChanged: () => void;
+}) {
+  const { notify } = useToast();
+  const [revoking, setRevoking] = useState(false);
+
+  const expired = new Date(invitation.expires_at) < new Date();
+
+  async function handleRevoke() {
+    if (revoking) return;
+    setRevoking(true);
+    try {
+      const resp = await authFetch(`/organizations/${orgId}/invitations/${invitation.id}`, { method: "DELETE" });
+      if (!resp.ok) {
+        const body = await resp.json().catch(() => ({ detail: "Could not revoke this invitation." }));
+        throw new ApiError(resp.status, body.detail ?? "Could not revoke this invitation.");
+      }
+      notify("success", `Invitation to ${invitation.email} revoked.`);
+      await onChanged();
+    } catch (err) {
+      notify("error", err instanceof ApiError ? err.message : "Something went wrong.");
+    } finally {
+      setRevoking(false);
+    }
+  }
+
+  return (
+    <li className="flex flex-wrap items-center justify-between gap-3 py-3">
+      <div>
+        <p className="font-medium text-ink">{invitation.full_name}</p>
+        <p className="text-sm text-ink-soft">{invitation.email}</p>
+      </div>
+      <div className="flex items-center gap-3">
+        <Badge tone={expired ? "neutral" : "warning"}>{expired ? "Expired" : "Pending"}</Badge>
+        <button
+          onClick={handleRevoke}
+          disabled={revoking}
+          className="inline-flex items-center gap-1 text-sm font-medium text-danger-600 hover:underline disabled:opacity-50"
+        >
+          <X className="h-3.5 w-3.5" aria-hidden />
+          Revoke
+        </button>
+      </div>
+    </li>
+  );
+}
+
+function InviteEmployeeDialog({
+  open,
+  onClose,
+  orgId,
+  authFetch,
+  roles,
+  stations,
+  onInvited,
+}: {
+  open: boolean;
+  onClose: () => void;
+  orgId: string;
+  authFetch: AuthFetch;
+  roles: Role[];
+  stations: Station[];
+  onInvited: () => void;
+}) {
+  const [form, setForm] = useState({ full_name: "", email: "", role_id: "", station_id: "" });
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<InvitationCreateResponse | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      setForm({ full_name: "", email: "", role_id: "", station_id: "" });
+      setError(null);
+      setResult(null);
+      setCopied(false);
+    }
+  }, [open]);
+
+  const acceptUrl = result ? `${window.location.origin}/invite/${result.token}` : "";
+
+  async function handleCopy() {
+    try {
+      await navigator.clipboard.writeText(acceptUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard access can fail silently (permissions); the link is still visible to select manually.
+    }
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (submitting) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      const resp = await authFetch(`/organizations/${orgId}/invitations`, {
+        method: "POST",
+        body: JSON.stringify({
+          full_name: form.full_name,
+          email: form.email,
+          role_id: form.role_id,
+          station_id: form.station_id || null,
+        }),
+      });
+      if (!resp.ok) {
+        const body = await resp.json().catch(() => ({ detail: "Could not create this invitation." }));
+        throw new ApiError(resp.status, body.detail ?? "Could not create this invitation.");
+      }
+      const body: InvitationCreateResponse = await resp.json();
+      setResult(body);
+      await onInvited();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Something went wrong.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onClose={onClose} title="Invite employee" size="lg">
+      {result ? (
+        <div className="space-y-4">
+          <p className="text-sm text-ink-soft">
+            Share this link with <span className="font-medium text-ink">{result.full_name}</span>. It expires in 72 hours
+            and is shown only once.
+          </p>
+          <div className="flex items-center gap-2 rounded-lg border border-border bg-surface-muted px-3 py-2">
+            <code className="flex-1 truncate text-sm text-ink">{acceptUrl}</code>
+            <button onClick={handleCopy} className="inline-flex items-center gap-1 text-sm font-medium text-accent hover:underline">
+              {copied ? <Check className="h-4 w-4" aria-hidden /> : <Copy className="h-4 w-4" aria-hidden />}
+              {copied ? "Copied" : "Copy"}
+            </button>
+          </div>
+          <div className="flex justify-end border-t border-border pt-4">
+            <Button type="button" onClick={onClose}>
+              Done
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field label="Full name" required>
+              {(id) => <TextInput id={id} required value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} />}
+            </Field>
+            <Field label="Email" required>
+              {(id) => <TextInput id={id} type="email" required value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />}
+            </Field>
+            <Field label="Role" required>
+              {(id) => (
+                <Select id={id} required value={form.role_id} onChange={(e) => setForm({ ...form, role_id: e.target.value })}>
+                  <option value="">Select a role</option>
+                  {roles.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.name}
+                    </option>
+                  ))}
+                </Select>
+              )}
+            </Field>
+            <Field label="Station" hint="Leave blank for organization-wide">
+              {(id) => (
+                <Select id={id} value={form.station_id} onChange={(e) => setForm({ ...form, station_id: e.target.value })}>
+                  <option value="">Org-wide</option>
+                  {stations.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </Select>
+              )}
+            </Field>
+          </div>
+          {error && <p className="text-sm text-danger-600">{error}</p>}
+          <div className="flex justify-end gap-2 border-t border-border pt-4">
+            <Button type="button" variant="secondary" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button type="submit" busy={submitting}>
+              <Mail className="h-4 w-4" aria-hidden />
+              Send invitation
+            </Button>
+          </div>
+        </form>
+      )}
+    </Dialog>
   );
 }
 

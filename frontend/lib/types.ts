@@ -28,6 +28,51 @@ export interface Organization {
   updated_at: string;
 }
 
+export interface Invitation {
+  id: string;
+  organization_id: string;
+  email: string;
+  full_name: string;
+  role_id: string;
+  station_id: string | null;
+  expires_at: string;
+  accepted_at: string | null;
+  revoked_at: string | null;
+  invited_by_user_id: string;
+  created_at: string;
+}
+
+export interface InvitationCreateResponse {
+  id: string;
+  email: string;
+  full_name: string;
+  expires_at: string;
+  token: string;
+}
+
+export interface InvitationPreview {
+  organization_name: string;
+  email: string;
+  full_name: string;
+  role_name: string;
+  station_name: string | null;
+  valid: boolean;
+  reason: string | null;
+}
+
+export interface PlatformOrganizationRow {
+  id: string;
+  name: string;
+  city: string | null;
+  is_active: boolean;
+  created_at: string;
+  owner_full_name: string | null;
+  owner_email: string | null;
+  station_count: number;
+  employee_count: number;
+  last_activity_at: string | null;
+}
+
 export interface PlatformStats {
   total_organizations: number;
   active_organizations: number;

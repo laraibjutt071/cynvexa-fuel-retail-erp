@@ -192,3 +192,32 @@ async def test_user_create_payload_cannot_set_is_superuser(
 
     created = (await db.execute(select(UserModel).where(UserModel.email == "newstaff@acmefuel-dev.com"))).scalar_one()
     assert created.is_superuser is False
+
+
+async def test_enriched_platform_directory_shows_owner_counts_and_activity(
+    client: AsyncClient, db: AsyncSession, superuser, owner_user, org, station, seeded_roles
+):
+    """Phase 5c: the Super Admin client directory row for a real seeded
+    organization shows its real owner, a real station count, a real
+    employee count, and a real last-activity timestamp - never
+    fabricated, and never one query per organization."""
+    owner_token = await login(client, owner_user.email)
+    # A real audit-logged action, so last_activity_at has something real
+    # to report - the fixtures themselves are direct DB inserts and write
+    # no audit log.
+    await client.patch(f"/organizations/{org.id}", json={"legal_name": "Acme Fuel Co Pvt Ltd"}, headers=auth_headers(owner_token))
+
+    admin_token = await login(client, "platform-admin@cynvexa-platform-dev.com")
+    resp = await client.get("/platform/organizations", headers=auth_headers(admin_token))
+    assert resp.status_code == 200
+    row = next(r for r in resp.json() if r["id"] == str(org.id))
+    assert row["owner_email"] == owner_user.email
+    assert row["station_count"] == 1
+    assert row["employee_count"] == 1
+    assert row["last_activity_at"] is not None
+
+
+async def test_tenant_owner_cannot_access_enriched_platform_directory(client: AsyncClient, owner_user, seeded_roles):
+    token = await login(client, owner_user.email)
+    resp = await client.get("/platform/organizations", headers=auth_headers(token))
+    assert resp.status_code == 403

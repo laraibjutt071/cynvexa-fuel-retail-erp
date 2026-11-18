@@ -23,12 +23,14 @@ from app.exceptions import ConflictError, NotFoundError
 from app.models.audit_log import AuditLog
 from app.models.organization import Organization
 from app.models.plan import Plan
+from app.models.role import Role
+from app.models.station import Station
 from app.models.subscription import Subscription
 from app.models.subscription_payment import SubscriptionPayment
 from app.models.user import User
 from app.models.user_station_role import UserStationRole
 from app.schemas.audit import AuditLogRead
-from app.schemas.organization import TenantOnboardingRequest, TenantOnboardingResponse
+from app.schemas.organization import PlatformOrganizationRow, TenantOnboardingRequest, TenantOnboardingResponse
 from app.schemas.plan import PlanCreate, PlanRead, PlanUpdate
 from app.schemas.subscription import (
     SubscriptionCreate,
@@ -141,6 +143,89 @@ async def platform_stats(
         ],
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
+
+
+@router.get("/organizations", response_model=list[PlatformOrganizationRow])
+async def list_organizations_enriched(
+    q: str | None = Query(default=None, max_length=200),
+    status: str | None = Query(default=None, pattern="^(active|suspended)$"),
+    current_user: User = Depends(require_superuser),
+    db: AsyncSession = Depends(get_db),
+) -> list[PlatformOrganizationRow]:
+    """The Super Admin client directory (Phase 5c) - one row per
+    organization with its owner, real station/employee counts, and last
+    activity, all aggregated server-side with GROUP BY queries (never
+    one query per organization) so this stays cheap regardless of how
+    many tenants exist."""
+    org_stmt = select(Organization)
+    if q:
+        org_stmt = org_stmt.where(Organization.name.ilike(f"%{q}%"))
+    if status == "active":
+        org_stmt = org_stmt.where(Organization.is_active.is_(True))
+    elif status == "suspended":
+        org_stmt = org_stmt.where(Organization.is_active.is_(False))
+    org_stmt = org_stmt.order_by(Organization.created_at.desc())
+    orgs = list((await db.execute(org_stmt)).scalars().all())
+    if not orgs:
+        return []
+    org_ids = [o.id for o in orgs]
+
+    station_counts = dict(
+        (await db.execute(
+            select(Station.organization_id, func.count())
+            .where(Station.organization_id.in_(org_ids))
+            .group_by(Station.organization_id)
+        )).all()
+    )
+    employee_counts = dict(
+        (await db.execute(
+            select(UserStationRole.organization_id, func.count(func.distinct(UserStationRole.user_id)))
+            .where(UserStationRole.organization_id.in_(org_ids), UserStationRole.is_active.is_(True))
+            .group_by(UserStationRole.organization_id)
+        )).all()
+    )
+    last_activity = dict(
+        (await db.execute(
+            select(AuditLog.organization_id, func.max(AuditLog.created_at))
+            .where(AuditLog.organization_id.in_(org_ids))
+            .group_by(AuditLog.organization_id)
+        )).all()
+    )
+    # One org-wide Owner per organization, same "station_id IS NULL" shape
+    # platform_stats already uses - picks whichever is first if more than
+    # one somehow holds it, never fabricated.
+    owner_rows = (
+        await db.execute(
+            select(UserStationRole.organization_id, User.full_name, User.email)
+            .join(User, User.id == UserStationRole.user_id)
+            .join(Role, Role.id == UserStationRole.role_id)
+            .where(
+                UserStationRole.organization_id.in_(org_ids),
+                UserStationRole.station_id.is_(None),
+                UserStationRole.is_active.is_(True),
+                Role.name == "Owner",
+            )
+        )
+    ).all()
+    owner_by_org: dict[uuid.UUID, tuple[str, str]] = {}
+    for org_id, full_name, email in owner_rows:
+        owner_by_org.setdefault(org_id, (full_name, email))
+
+    return [
+        PlatformOrganizationRow(
+            id=org.id,
+            name=org.name,
+            city=org.city,
+            is_active=org.is_active,
+            created_at=org.created_at,
+            owner_full_name=owner_by_org.get(org.id, (None, None))[0],
+            owner_email=owner_by_org.get(org.id, (None, None))[1],
+            station_count=station_counts.get(org.id, 0),
+            employee_count=employee_counts.get(org.id, 0),
+            last_activity_at=last_activity.get(org.id),
+        )
+        for org in orgs
+    ]
 
 
 @router.get("/audit-log", response_model=list[AuditLogRead])
