@@ -23,8 +23,9 @@ class Plan(UUIDPKMixin, TimestampMixin, Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     price_monthly: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     price_annual: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
-    # NULL = unlimited. Enforcing these limits against actual station/user
-    # counts is not implemented yet - see docs/ASSUMPTIONS.md.
+    # NULL = unlimited. Enforced against actual station/user counts in
+    # app/core/plan_limits.py (Phase 8a) - see that module's docstring for
+    # exactly what counts as a station/user.
     max_stations: Mapped[int | None] = mapped_column(Integer, nullable=True)
     max_users: Mapped[int | None] = mapped_column(Integer, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)

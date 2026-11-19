@@ -10,6 +10,7 @@ from app.api.common import get_organization_or_404, get_station_or_404
 from app.api.deps import get_db, require_permission
 from app.core.audit import write_audit_log
 from app.core.permission_codes import STATION_CREATE, STATION_READ, STATION_UPDATE
+from app.core.plan_limits import enforce_station_limit
 from app.exceptions import ConflictError
 from app.models.station import Station
 from app.models.user import User
@@ -32,6 +33,7 @@ async def create_station(
     # that doesn't exist, which the FK constraint would reject - but as the
     # ConflictError below, misreporting it as a duplicate code.
     await get_organization_or_404(db, organization_id)
+    await enforce_station_limit(db, organization_id)
 
     station = Station(organization_id=organization_id, **payload.model_dump())
     db.add(station)

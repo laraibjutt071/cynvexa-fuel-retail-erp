@@ -25,6 +25,7 @@ from app.api.deps import get_db, require_permission
 from app.core.audit import write_audit_log
 from app.core.permission_codes import USER_ASSIGN_ROLE, USER_CREATE, USER_READ
 from app.core.permissions import actor_can_grant_scope
+from app.core.plan_limits import enforce_user_limit
 from app.core.rate_limit import registration_limiter
 from app.core.security import hash_password, hash_refresh_token
 from app.exceptions import ConflictError, NotFoundError, PermissionDeniedError, ValidationFailedError
@@ -72,6 +73,10 @@ async def create_invitation(
     existing_user = (await db.execute(select(User).where(User.email == payload.email))).scalar_one_or_none()
     if existing_user is not None:
         raise ConflictError("An account with this email already exists. Assign them a role directly instead.")
+
+    # An invitation reserves a seat the moment it's created, same as a
+    # direct user create - see app/core/plan_limits.py.
+    await enforce_user_limit(db, organization_id, counting_pending=True)
 
     role = (await db.execute(select(Role).where(Role.id == payload.role_id))).scalar_one_or_none()
     if role is None:
@@ -221,6 +226,14 @@ async def accept_invitation(
     existing_user = (await db.execute(select(User).where(User.email == invitation.email))).scalar_one_or_none()
     if existing_user is not None:
         raise ConflictError("An account with this email already exists. Try logging in instead.")
+
+    # This invitation already reserved its seat at creation (counting_pending
+    # above) - accepting it converts that reservation into the real seat,
+    # never an additional one, so pending invitations aren't counted again
+    # here. Still re-checked against the current active-user count: time
+    # has passed since the invitation was sent, and other seats may have
+    # filled in the meantime.
+    await enforce_user_limit(db, invitation.organization_id, counting_pending=False)
 
     user = User(
         email=invitation.email, full_name=invitation.full_name, hashed_password=hash_password(payload.password)

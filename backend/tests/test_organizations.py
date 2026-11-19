@@ -115,13 +115,19 @@ async def test_station_code_can_repeat_across_different_organizations(
     a station directly (require_permission's is_superuser bypass is gone
     for tenant business-data writes) - so the second organization is
     onboarded with its own real owner via the platform onboarding flow,
-    and that owner creates the station, same as any other tenant."""
+    and that owner creates the station, same as any other tenant.
+
+    max_stations=2 (not 1): onboarding itself already creates one station
+    ("ST-1") for the new org - Phase 8a's plan-limit enforcement would
+    otherwise correctly reject this test's own second, explicit station
+    creation as exceeding a 1-station plan, which isn't what this test is
+    about."""
     from app.models.plan import Plan
 
     db.add(
         Plan(
             code="starter", name="Starter", price_monthly="15000.00", price_annual="150000.00",
-            max_stations=1, max_users=5,
+            max_stations=2, max_users=5,
         )
     )
     await db.commit()

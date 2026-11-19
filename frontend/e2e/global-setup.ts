@@ -55,19 +55,26 @@ export default async function globalSetup() {
   // masters, shifts, etc. directly. The organization and its owner are
   // provisioned the same way a real platform admin would ("Create Petrol
   // Pump", app/api/platform.py::onboard_organization), which needs a
-  // Plan to exist; tolerate a 409 from an earlier test run having already
-  // created it (the plan catalog is global, not per-run).
+  // Plan to exist.
+  //
+  // A dedicated "e2e-unlimited" plan, not the real "starter" plan: this
+  // dev database already has real seed/demo Plan rows (code "starter",
+  // "business", "enterprise") with deliberately small limits for demo
+  // purposes, and Phase 8a now actually enforces them - this suite seeds
+  // several stations and users, which a small real-world demo plan isn't
+  // meant to accommodate. Tolerate a 409 from an earlier run having
+  // already created it (the plan catalog is global, not per-run).
   try {
     await json(`${API_BASE}/platform/plans`, {
       method: "POST",
       headers: adminAuth,
       body: JSON.stringify({
-        code: "starter",
-        name: "Starter",
-        price_monthly: "15000.00",
-        price_annual: "150000.00",
-        max_stations: 50,
-        max_users: 200,
+        code: "e2e-unlimited",
+        name: "E2E Unlimited",
+        price_monthly: "0.00",
+        price_annual: "0.00",
+        max_stations: null,
+        max_users: null,
       }),
     });
   } catch (err) {
@@ -85,7 +92,7 @@ export default async function globalSetup() {
         owner_full_name: "E2E Owner",
         owner_email: OWNER_EMAIL,
         owner_password: OWNER_PASSWORD,
-        plan_code: "starter",
+        plan_code: "e2e-unlimited",
       }),
     }
   );

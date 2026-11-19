@@ -73,6 +73,12 @@ Deliberately not built this pass - triaged, not missed:
 - **Translating the older Phase-6 report tabs** (org/station dashboard's Suppliers/Credit/Audit/Expenses/Reports tabs) - the Daily Entry workflow and main nav were prioritized as the higher-traffic, non-technical-user-facing surface.
 - **Onboarding tour, draft/autosave on Daily Entry forms, a dedicated WCAG audit** - same honest gaps as before, not newly claimed as done.
 
+## Phase 8a — Subscription plan limit enforcement (2026-11-19)
+
+**Closed**: `Plan.max_stations`/`max_users` existed since Phase 7 but were never read anywhere - any organization could create unlimited stations/users regardless of its subscription. Now enforced at every creation path (direct station/user creation, role assignment, invitation creation and acceptance) with database-row-locking to prevent a concurrent-request bypass (no migration). Full definition of what counts, and why stations and users are deliberately counted differently, is in `docs/PHASE_8A_PLAN_LIMITS_REPORT.md`.
+
+**New, narrow risk introduced**: subscription *status* (trial/active/past_due/canceled/expired) still has no bearing on access - `Subscription`'s own docstring already flagged this ("Access is NOT currently restricted when a subscription lapses") before this phase, and Phase 8a does not change that. Plan limit enforcement and subscription-status enforcement are two different things; only the first is now built. A canceled/expired subscription's organization can still create stations/users right up to its plan's numeric limit, with no automated consequence for the lapsed billing status itself. Not fixed this phase - same reasoning as the original note: there is no payment gateway wired in, so "enforce on lapse" has no real trigger yet.
+
 ## Pilot Day 2 — Reading Corrections, Credit Customer Enhancement (2026-11-14)
 
 ### New risks introduced

@@ -10,6 +10,7 @@ from app.api.deps import get_db, require_permission
 from app.core.audit import write_audit_log
 from app.core.permission_codes import USER_ASSIGN_ROLE, USER_CREATE, USER_READ, USER_UPDATE
 from app.core.permissions import actor_can_grant_scope
+from app.core.plan_limits import enforce_user_limit
 from app.core.security import hash_password
 from app.exceptions import ConflictError, NotFoundError, PermissionDeniedError, ValidationFailedError
 from app.models.role import Role
@@ -46,6 +47,12 @@ async def create_user(
     db: AsyncSession = Depends(get_db),
 ) -> User:
     await get_organization_or_404(db, organization_id)
+    # A bare user has no role yet (see list_users's own docstring elsewhere
+    # in this file) and so isn't a counted "active user" until a role is
+    # granted below or separately - this check is early feedback for the
+    # common case where the two happen together, not the only gate; see
+    # assign_role's own check for the one that actually matters.
+    await enforce_user_limit(db, organization_id, counting_pending=True)
 
     user = User(
         email=payload.email,
@@ -179,6 +186,22 @@ async def assign_role(
     db: AsyncSession = Depends(get_db),
 ) -> UserStationRole:
     await get_organization_or_404(db, organization_id)
+
+    # The real seat-consuming moment (see app/core/plan_limits.py) - but
+    # only when this user doesn't already hold an active role here; a
+    # second role for an already-counted employee (e.g. also covering a
+    # second station) never needs a new seat.
+    already_active = (
+        await db.execute(
+            select(UserStationRole.id).where(
+                UserStationRole.organization_id == organization_id,
+                UserStationRole.user_id == user_id,
+                UserStationRole.is_active.is_(True),
+            )
+        )
+    ).first()
+    if already_active is None:
+        await enforce_user_limit(db, organization_id, counting_pending=True)
 
     # require_permission already confirmed current_user holds USER_ASSIGN_ROLE
     # SOMEWHERE in this org, which is necessary but not sufficient: a role
