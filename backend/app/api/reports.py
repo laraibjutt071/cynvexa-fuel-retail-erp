@@ -13,6 +13,7 @@ from app.core.fuel_grade_lookup import get_fuel_grades_by_id
 from app.core.inventory import get_inventory_stock
 from app.core.permission_codes import REPORT_READ, SUPPLIER_LEDGER_READ
 from app.core.permissions import get_station_visibility_scope
+from app.core.support_sessions import superuser_visible_station_ids
 from app.core.reconciliation import get_total_tender_amount
 from app.core.revenue import compute_expected_fuel_revenue_by_grade
 from app.core.variance import compute_shift_tank_variance
@@ -387,7 +388,11 @@ async def pending_approvals_report(
     await get_organization_or_404(db, organization_id)
 
     visible_station_ids: set[uuid.UUID] | None = None
-    if not current_user.is_superuser:
+    if current_user.is_superuser:
+        visible_station_ids = await superuser_visible_station_ids(
+            db, current_user=current_user, organization_id=organization_id
+        )
+    else:
         visible_station_ids = await get_station_visibility_scope(
             db, user_id=current_user.id, organization_id=organization_id, permission_code=REPORT_READ
         )

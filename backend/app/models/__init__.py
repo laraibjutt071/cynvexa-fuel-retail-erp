@@ -52,6 +52,7 @@ from app.models.plan import Plan
 from app.models.subscription import BillingCycle, Subscription, SubscriptionStatus
 from app.models.subscription_payment import SubscriptionPayment, SubscriptionPaymentStatus
 from app.models.invitation import Invitation
+from app.models.support_session import SupportSession
 
 __all__ = [
     "Organization",
@@ -122,4 +123,5 @@ __all__ = [
     "ExpenseCategory",
     "ShiftTemplate",
     "Invitation",
+    "SupportSession",
 ]

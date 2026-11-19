@@ -10,6 +10,7 @@ from app.api.deps import get_db, require_permission
 from app.core.audit import write_audit_log
 from app.core.permission_codes import EXPENSE_APPROVE, EXPENSE_READ, EXPENSE_RECORD
 from app.core.permissions import get_station_visibility_scope
+from app.core.support_sessions import superuser_visible_station_ids
 from app.exceptions import ConflictError
 from app.models.expense import Expense, ExpenseStatus
 from app.models.user import User
@@ -69,14 +70,18 @@ async def list_expenses(
     if station_id is not None:
         stmt = stmt.where(Expense.station_id == station_id)
 
-    if not current_user.is_superuser:
+    if current_user.is_superuser:
+        visible_station_ids = await superuser_visible_station_ids(
+            db, current_user=current_user, organization_id=organization_id
+        )
+    else:
         visible_station_ids = await get_station_visibility_scope(
             db, user_id=current_user.id, organization_id=organization_id, permission_code=EXPENSE_READ
         )
-        if visible_station_ids is not None:
-            stmt = stmt.where(
-                (Expense.station_id.is_(None)) | (Expense.station_id.in_(visible_station_ids))
-            )
+    if visible_station_ids is not None:
+        stmt = stmt.where(
+            (Expense.station_id.is_(None)) | (Expense.station_id.in_(visible_station_ids))
+        )
 
     stmt = stmt.order_by(Expense.expense_date.desc()).offset(offset).limit(limit)
     result = await db.execute(stmt)

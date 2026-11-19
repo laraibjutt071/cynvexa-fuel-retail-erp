@@ -1,5 +1,6 @@
 import pytest
 from httpx import AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from tests.conftest import auth_headers, login
 
@@ -108,11 +109,33 @@ async def test_station_code_must_be_unique_within_organization(
 
 
 async def test_station_code_can_repeat_across_different_organizations(
-    client: AsyncClient, superuser, owner_user, org
+    client: AsyncClient, db: AsyncSession, superuser, owner_user, org, seeded_roles
 ):
+    """Phase 5b: a bare superuser with no tenant role can no longer create
+    a station directly (require_permission's is_superuser bypass is gone
+    for tenant business-data writes) - so the second organization is
+    onboarded with its own real owner via the platform onboarding flow,
+    and that owner creates the station, same as any other tenant."""
+    from app.models.plan import Plan
+
+    db.add(
+        Plan(
+            code="starter", name="Starter", price_monthly="15000.00", price_annual="150000.00",
+            max_stations=1, max_users=5,
+        )
+    )
+    await db.commit()
+
     admin_token = await login(client, "platform-admin@cynvexa-platform-dev.com")
     create_org_resp = await client.post(
-        "/organizations", json={"name": "Second Co"}, headers=auth_headers(admin_token)
+        "/platform/organizations",
+        json={
+            "company_name": "Second Co",
+            "owner_full_name": "Second Owner",
+            "owner_email": "secondowner@secondco-dev.com",
+            "owner_password": "a-strong-password-123",
+        },
+        headers=auth_headers(admin_token),
     )
     assert create_org_resp.status_code == 201
 
@@ -124,12 +147,12 @@ async def test_station_code_can_repeat_across_different_organizations(
     )
     assert resp1.status_code == 201
 
-    # Superuser creating a station directly in the second org (no station role needed: is_superuser bypasses).
-    second_org_id = create_org_resp.json()["id"]
+    second_owner_token = await login(client, "secondowner@secondco-dev.com")
+    second_org_id = create_org_resp.json()["organization_id"]
     resp2 = await client.post(
         f"/organizations/{second_org_id}/stations",
         json={"name": "Station A", "code": "SAME"},
-        headers=auth_headers(admin_token),
+        headers=auth_headers(second_owner_token),
     )
     assert resp2.status_code == 201
 

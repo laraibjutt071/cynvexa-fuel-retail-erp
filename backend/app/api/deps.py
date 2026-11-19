@@ -6,12 +6,23 @@ from fastapi import Depends, Header, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.audit import write_audit_log
+from app.core.permission_codes import ORGANIZATION_READ, ORGANIZATION_UPDATE
 from app.core.permissions import user_has_permission
 from app.core.security import decode_access_token
+from app.core.support_sessions import support_session_grants
 from app.database import get_db
 from app.exceptions import AuthenticationError, PermissionDeniedError, ValidationFailedError
 from app.models.organization import Organization
 from app.models.user import User
+
+# Organization profile read/update is the Super Admin's own directory data
+# (city, legal name, is_active, ...) - the same information
+# /platform/organizations already exposes freely - not a tenant's business
+# records. It keeps today's unconditional superuser access; every other
+# permission code requires either a real role or an active support
+# session. See docs/PHASE_5B_SUPER_ADMIN_SUPPORT_SESSIONS_AUDIT.md §3.
+_PLATFORM_DIRECT_PERMISSIONS = {ORGANIZATION_READ, ORGANIZATION_UPDATE}
 
 __all__ = ["get_db", "get_current_user", "require_permission", "require_superuser"]
 
@@ -94,14 +105,42 @@ def require_permission(permission_code: str) -> Callable:
                     "This organization has been suspended. Contact the platform administrator."
                 )
 
-        allowed = current_user.is_superuser or await user_has_permission(
+        is_platform_direct = permission_code in _PLATFORM_DIRECT_PERMISSIONS
+        allowed = (current_user.is_superuser and is_platform_direct) or await user_has_permission(
             db,
             user_id=current_user.id,
             organization_id=organization_id,
             station_id=station_id,
             permission_code=permission_code,
         )
+        if not allowed and current_user.is_superuser and not is_platform_direct:
+            # No real role grants this - the only other legitimate path is
+            # an active, scope-matching, read-only support session (Phase
+            # 5b). This never grants a write: support_session_grants
+            # rejects any permission_code that isn't a ':read' code.
+            session = await support_session_grants(
+                db,
+                current_user=current_user,
+                organization_id=organization_id,
+                station_id=station_id,
+                permission_code=permission_code,
+            )
+            allowed = session is not None
         if not allowed:
+            if current_user.is_superuser and not is_platform_direct:
+                # Committed immediately, on its own - there is no
+                # mutation for this denial to share a transaction with.
+                await write_audit_log(
+                    db,
+                    action="support_session.access_denied",
+                    entity_type="Organization",
+                    entity_id=str(organization_id),
+                    actor_user_id=current_user.id,
+                    organization_id=organization_id,
+                    station_id=station_id,
+                    after={"permission_code": permission_code},
+                )
+                await db.commit()
             raise PermissionDeniedError()
         return current_user
 

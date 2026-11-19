@@ -50,6 +50,21 @@ export interface InvitationCreateResponse {
   token: string;
 }
 
+export type SupportSessionStatus = "active" | "ended" | "expired";
+
+export interface SupportSession {
+  id: string;
+  organization_id: string;
+  organization_name: string;
+  station_id: string | null;
+  station_name: string | null;
+  reason: string;
+  created_at: string;
+  expires_at: string;
+  ended_at: string | null;
+  status: SupportSessionStatus;
+}
+
 export interface InvitationPreview {
   organization_name: string;
   email: string;

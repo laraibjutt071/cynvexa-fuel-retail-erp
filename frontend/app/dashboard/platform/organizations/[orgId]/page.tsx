@@ -10,7 +10,16 @@ import { Button } from "@/components/ui/Button";
 import { Select } from "@/components/ui/Field";
 import { Badge, type BadgeTone } from "@/components/ui/Badge";
 import { ConfirmDialog } from "@/components/ui/Dialog";
-import type { Organization, OrgUser, Plan, RoleAssignment, Station, Subscription, SubscriptionStatus } from "@/lib/types";
+import type {
+  Organization,
+  OrgUser,
+  Plan,
+  RoleAssignment,
+  Station,
+  Subscription,
+  SubscriptionStatus,
+} from "@/lib/types";
+import { SupportSessionPanel } from "./SupportSessionPanel";
 
 const STATUS_TONE: Record<SubscriptionStatus, BadgeTone> = {
   trial: "warning",
@@ -34,19 +43,31 @@ export default function OrganizationDetailPage() {
   const [plans, setPlans] = useState<Plan[]>([]);
   const [confirmSuspend, setConfirmSuspend] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [hasSessionForThisOrg, setHasSessionForThisOrg] = useState(false);
 
-  const load = useCallback(async () => {
-    const [orgResp, stationsResp, usersResp, plansResp, subResp] = await Promise.all([
+  // Org profile, plans and subscription are platform-governance data -
+  // always available to a superuser, no support session needed (Phase
+  // 5b keeps this unchanged; see docs/PHASE_5B_SUPER_ADMIN_SUPPORT_SESSIONS_AUDIT.md §3).
+  const loadBasics = useCallback(async () => {
+    const [orgResp, plansResp, subResp] = await Promise.all([
       authFetch(`/organizations/${orgId}`),
-      authFetch(`/organizations/${orgId}/stations`),
-      authFetch(`/organizations/${orgId}/users`),
       authFetch("/platform/plans"),
       authFetch(`/platform/organizations/${orgId}/subscription`),
     ]);
     if (orgResp.ok) setOrg(await orgResp.json());
-    if (stationsResp.ok) setStations(await stationsResp.json());
     if (plansResp.ok) setPlans(await plansResp.json());
     setSubscription(subResp.ok ? await subResp.json() : null);
+  }, [authFetch, orgId]);
+
+  // Stations, users and their roles are this organization's own business
+  // data - only readable while an active support session for this org is
+  // open (Phase 5b). Called only once SupportSessionPanel reports one.
+  const loadTenantData = useCallback(async () => {
+    const [stationsResp, usersResp] = await Promise.all([
+      authFetch(`/organizations/${orgId}/stations`),
+      authFetch(`/organizations/${orgId}/users`),
+    ]);
+    if (stationsResp.ok) setStations(await stationsResp.json());
 
     if (usersResp.ok) {
       const list: OrgUser[] = await usersResp.json();
@@ -63,8 +84,24 @@ export default function OrganizationDetailPage() {
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    load();
-  }, [load]);
+    loadBasics();
+  }, [loadBasics]);
+
+  useEffect(() => {
+    if (hasSessionForThisOrg) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      loadTenantData();
+    } else {
+      setStations(null);
+      setUsers(null);
+      setOwnerRoles(new Map());
+    }
+  }, [hasSessionForThisOrg, loadTenantData]);
+
+  const load = useCallback(async () => {
+    await loadBasics();
+    if (hasSessionForThisOrg) await loadTenantData();
+  }, [loadBasics, loadTenantData, hasSessionForThisOrg]);
 
   async function toggleSuspend() {
     if (!org || busy) return;
@@ -109,6 +146,8 @@ export default function OrganizationDetailPage() {
         </Button>
       </div>
 
+      <SupportSessionPanel orgId={orgId} onSessionChange={(s) => setHasSessionForThisOrg(s?.status === "active" && s.organization_id === orgId)} />
+
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Card title="Business information">
           <dl className="space-y-2.5 text-sm">
@@ -122,7 +161,9 @@ export default function OrganizationDetailPage() {
         </Card>
 
         <Card title="Owner(s)">
-          {!users ? (
+          {!hasSessionForThisOrg ? (
+            <p className="text-sm text-ink-soft">Start a support session to view this organization's owners.</p>
+          ) : !users ? (
             <p className="text-sm text-ink-soft">Loading…</p>
           ) : ownerRows.length === 0 ? (
             <p className="text-sm text-ink-soft">No org-wide Owner found.</p>
@@ -140,7 +181,9 @@ export default function OrganizationDetailPage() {
       </div>
 
       <Card title="Stations" description="Every station this organization operates.">
-        {!stations ? (
+        {!hasSessionForThisOrg ? (
+          <p className="text-sm text-ink-soft">Start a support session to view this organization's stations.</p>
+        ) : !stations ? (
           <p className="text-sm text-ink-soft">Loading…</p>
         ) : stations.length === 0 ? (
           <p className="text-sm text-ink-soft">No stations yet.</p>
@@ -159,7 +202,9 @@ export default function OrganizationDetailPage() {
       </Card>
 
       <Card title="All users" description={`${users?.length ?? 0} account(s) with a role in this organization.`}>
-        {!users ? (
+        {!hasSessionForThisOrg ? (
+          <p className="text-sm text-ink-soft">Start a support session to view this organization's users.</p>
+        ) : !users ? (
           <p className="text-sm text-ink-soft">Loading…</p>
         ) : (
           <ul className="divide-y divide-border">

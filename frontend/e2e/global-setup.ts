@@ -50,37 +50,68 @@ export default async function globalSetup() {
   });
   const adminAuth = { Authorization: `Bearer ${adminLogin.access_token}` };
 
-  const org = await json<{ id: string }>(`${API_BASE}/organizations`, {
-    method: "POST",
-    headers: adminAuth,
-    body: JSON.stringify({ name: `E2E Fuel Co ${RUN_ID}` }),
-  });
+  // Phase 5b closed the is_superuser bypass for tenant business-data
+  // reads/writes - a bare superuser can no longer create stations, fuel
+  // masters, shifts, etc. directly. The organization and its owner are
+  // provisioned the same way a real platform admin would ("Create Petrol
+  // Pump", app/api/platform.py::onboard_organization), which needs a
+  // Plan to exist; tolerate a 409 from an earlier test run having already
+  // created it (the plan catalog is global, not per-run).
+  try {
+    await json(`${API_BASE}/platform/plans`, {
+      method: "POST",
+      headers: adminAuth,
+      body: JSON.stringify({
+        code: "starter",
+        name: "Starter",
+        price_monthly: "15000.00",
+        price_annual: "150000.00",
+        max_stations: 50,
+        max_users: 200,
+      }),
+    });
+  } catch (err) {
+    if (!(err instanceof Error) || !err.message.includes("409")) throw err;
+  }
 
-  // Create the owner user directly against Postgres via the seed CLI would
-  // need its own subcommand; instead, reuse the superuser to create the org
-  // and a station, then bootstrap a second superuser as the "owner" so the
-  // UI tests can sign in with a normal login - simplest path that still
-  // exercises the real login/dashboard code, not a shortcut around auth.
-  execSync(
-    `docker compose exec -T backend python -m app.seed superuser --email ${OWNER_EMAIL} --password "${OWNER_PASSWORD}" --full-name "E2E Owner"`,
-    { cwd: repoRoot, stdio: "inherit" }
+  const onboarding = await json<{ organization_id: string; station_id: string }>(
+    `${API_BASE}/platform/organizations`,
+    {
+      method: "POST",
+      headers: adminAuth,
+      body: JSON.stringify({
+        company_name: `E2E Fuel Co ${RUN_ID}`,
+        station_name: "E2E Station",
+        owner_full_name: "E2E Owner",
+        owner_email: OWNER_EMAIL,
+        owner_password: OWNER_PASSWORD,
+        plan_code: "starter",
+      }),
+    }
   );
+  const org = { id: onboarding.organization_id };
+  const station = { id: onboarding.station_id };
 
-  const station = await json<{ id: string }>(`${API_BASE}/organizations/${org.id}/stations`, {
+  // Every call below acts on this organization's own business data, so it
+  // authenticates as its real Owner (who holds every permission in their
+  // own org) rather than the platform superuser, which no longer bypasses
+  // tenant RBAC (Phase 5b) - this also exercises the real role-based
+  // permission path every other tenant user goes through.
+  const ownerLogin = await json<{ access_token: string }>(`${API_BASE}/auth/login`, {
     method: "POST",
-    headers: adminAuth,
-    body: JSON.stringify({ name: "E2E Station", code: `E2E-${RUN_ID}` }),
+    body: JSON.stringify({ email: OWNER_EMAIL, password: OWNER_PASSWORD }),
   });
+  const ownerAuth = { Authorization: `Bearer ${ownerLogin.access_token}` };
 
   const fuelGrade = await json<{ id: string }>(`${API_BASE}/organizations/${org.id}/fuel-grades`, {
     method: "POST",
-    headers: adminAuth,
+    headers: ownerAuth,
     body: JSON.stringify({ name: "E2E Petrol", code: `EP${RUN_ID.slice(-4)}` }),
   });
 
   const tank = await json<{ id: string }>(`${API_BASE}/organizations/${org.id}/stations/${station.id}/tanks`, {
     method: "POST",
-    headers: adminAuth,
+    headers: ownerAuth,
     body: JSON.stringify({
       code: "T1",
       name: "Tank 1",
@@ -92,17 +123,17 @@ export default async function globalSetup() {
 
   const dispenser = await json<{ id: string }>(
     `${API_BASE}/organizations/${org.id}/stations/${station.id}/dispensers`,
-    { method: "POST", headers: adminAuth, body: JSON.stringify({ code: "D1", name: "Dispenser 1" }) }
+    { method: "POST", headers: ownerAuth, body: JSON.stringify({ code: "D1", name: "Dispenser 1" }) }
   );
 
   const nozzle = await json<{ id: string }>(
     `${API_BASE}/organizations/${org.id}/stations/${station.id}/dispensers/${dispenser.id}/nozzles`,
-    { method: "POST", headers: adminAuth, body: JSON.stringify({ code: "N1", tank_id: tank.id }) }
+    { method: "POST", headers: ownerAuth, body: JSON.stringify({ code: "N1", tank_id: tank.id }) }
   );
 
   await json(`${API_BASE}/organizations/${org.id}/stations/${station.id}/fuel-prices`, {
     method: "POST",
-    headers: adminAuth,
+    headers: ownerAuth,
     body: JSON.stringify({
       fuel_grade_id: fuelGrade.id,
       price_per_litre: "280.00",
@@ -112,7 +143,7 @@ export default async function globalSetup() {
 
   const paymentMethod = await json<{ id: string }>(`${API_BASE}/organizations/${org.id}/payment-methods`, {
     method: "POST",
-    headers: adminAuth,
+    headers: ownerAuth,
     body: JSON.stringify({ name: "Cash", code: "CASH", category: "cash" }),
   });
 
@@ -121,14 +152,14 @@ export default async function globalSetup() {
   // enforces).
   const supplier = await json<{ id: string }>(`${API_BASE}/organizations/${org.id}/suppliers`, {
     method: "POST",
-    headers: adminAuth,
+    headers: ownerAuth,
     body: JSON.stringify({ name: "E2E Supplier" }),
   });
   const receipt = await json<{ id: string }>(
     `${API_BASE}/organizations/${org.id}/stations/${station.id}/tanker-receipts`,
     {
       method: "POST",
-      headers: adminAuth,
+      headers: ownerAuth,
       body: JSON.stringify({
         tank_id: tank.id,
         supplier_id: supplier.id,
@@ -141,12 +172,12 @@ export default async function globalSetup() {
   );
   await json(`${API_BASE}/organizations/${org.id}/stations/${station.id}/tanker-receipts/${receipt.id}/record-unload`, {
     method: "PATCH",
-    headers: adminAuth,
+    headers: ownerAuth,
     body: JSON.stringify({ post_receipt_tank_reading: "10000" }),
   });
   await json(`${API_BASE}/organizations/${org.id}/stations/${station.id}/tanker-receipts/${receipt.id}/approve`, {
     method: "PATCH",
-    headers: adminAuth,
+    headers: ownerAuth,
     body: JSON.stringify({
       accepted_quantity: "10000",
       payable_quantity_basis: "invoice_quantity",
@@ -158,46 +189,46 @@ export default async function globalSetup() {
   // approve - so the daily-fuel-sales / tank-variance / reconciliation
   // report tabs have real rows to assert on.
   const shiftsBase = `${API_BASE}/organizations/${org.id}/stations/${station.id}/shifts`;
-  const shift = await json<{ id: string }>(shiftsBase, { method: "POST", headers: adminAuth, body: JSON.stringify({}) });
+  const shift = await json<{ id: string }>(shiftsBase, { method: "POST", headers: ownerAuth, body: JSON.stringify({}) });
   await json(`${shiftsBase}/${shift.id}/tank-readings/opening`, {
     method: "POST",
-    headers: adminAuth,
+    headers: ownerAuth,
     body: JSON.stringify({ tank_id: tank.id, dip_reading: "10000" }),
   });
   const nozzleReading = await json<{ id: string }>(`${shiftsBase}/${shift.id}/nozzle-readings`, {
     method: "POST",
-    headers: adminAuth,
+    headers: ownerAuth,
     body: JSON.stringify({ nozzle_id: nozzle.id, opening_totalizer: "0" }),
   });
   await json(`${shiftsBase}/${shift.id}/nozzle-readings/${nozzleReading.id}/close`, {
     method: "PATCH",
-    headers: adminAuth,
+    headers: ownerAuth,
     body: JSON.stringify({ closing_totalizer: "500" }),
   });
   await json(`${shiftsBase}/${shift.id}/tank-readings/closing`, {
     method: "POST",
-    headers: adminAuth,
+    headers: ownerAuth,
     body: JSON.stringify({ tank_id: tank.id, dip_reading: "9500" }),
   });
-  await json(`${shiftsBase}/${shift.id}/close`, { method: "PATCH", headers: adminAuth, body: "{}" });
+  await json(`${shiftsBase}/${shift.id}/close`, { method: "PATCH", headers: ownerAuth, body: "{}" });
   await json(`${shiftsBase}/${shift.id}/tenders`, {
     method: "POST",
-    headers: adminAuth,
+    headers: ownerAuth,
     body: JSON.stringify({ payment_method_id: paymentMethod.id, amount: "140000" }),
   });
   await json(`${shiftsBase}/${shift.id}/reconciliation`, {
     method: "POST",
-    headers: adminAuth,
+    headers: ownerAuth,
     body: JSON.stringify({ actual_physical_cash: "140000" }),
   });
-  await json(`${shiftsBase}/${shift.id}/approve`, { method: "PATCH", headers: adminAuth, body: "{}" });
+  await json(`${shiftsBase}/${shift.id}/approve`, { method: "PATCH", headers: ownerAuth, body: "{}" });
 
   // An inventory item for the inventory-movement workflow test.
   const inventoryItem = await json<{ id: string }>(
     `${API_BASE}/organizations/${org.id}/stations/${station.id}/inventory-items`,
     {
       method: "POST",
-      headers: adminAuth,
+      headers: ownerAuth,
       body: JSON.stringify({ sku: "E2E-OIL", name: "E2E Engine Oil", unit: "bottle", reorder_level: "5" }),
     }
   );
@@ -205,7 +236,7 @@ export default async function globalSetup() {
   // A pending expense for the approve-via-UI workflow test.
   await json(`${API_BASE}/organizations/${org.id}/expenses`, {
     method: "POST",
-    headers: adminAuth,
+    headers: ownerAuth,
     body: JSON.stringify({
       category: "e2e",
       description: "E2E seeded expense",
@@ -221,17 +252,17 @@ export default async function globalSetup() {
   // station where today really has nothing yet.
   const station2 = await json<{ id: string }>(`${API_BASE}/organizations/${org.id}/stations`, {
     method: "POST",
-    headers: adminAuth,
+    headers: ownerAuth,
     body: JSON.stringify({ name: "E2E Station 2", code: `E2E2-${RUN_ID}` }),
   });
   const fuelGrade2 = await json<{ id: string }>(`${API_BASE}/organizations/${org.id}/fuel-grades`, {
     method: "POST",
-    headers: adminAuth,
+    headers: ownerAuth,
     body: JSON.stringify({ name: "E2E Diesel", code: `ED${RUN_ID.slice(-4)}` }),
   });
   const tank2 = await json<{ id: string }>(`${API_BASE}/organizations/${org.id}/stations/${station2.id}/tanks`, {
     method: "POST",
-    headers: adminAuth,
+    headers: ownerAuth,
     body: JSON.stringify({
       code: "T1",
       name: "Tank 1",
@@ -242,16 +273,16 @@ export default async function globalSetup() {
   });
   const dispenser2 = await json<{ id: string }>(
     `${API_BASE}/organizations/${org.id}/stations/${station2.id}/dispensers`,
-    { method: "POST", headers: adminAuth, body: JSON.stringify({ code: "D1", name: "Dispenser 1" }) }
+    { method: "POST", headers: ownerAuth, body: JSON.stringify({ code: "D1", name: "Dispenser 1" }) }
   );
   await json(`${API_BASE}/organizations/${org.id}/stations/${station2.id}/dispensers/${dispenser2.id}/nozzles`, {
     method: "POST",
-    headers: adminAuth,
+    headers: ownerAuth,
     body: JSON.stringify({ code: "N1", tank_id: tank2.id }),
   });
   await json(`${API_BASE}/organizations/${org.id}/stations/${station2.id}/fuel-prices`, {
     method: "POST",
-    headers: adminAuth,
+    headers: ownerAuth,
     body: JSON.stringify({
       fuel_grade_id: fuelGrade2.id,
       price_per_litre: "280.00",
@@ -262,14 +293,14 @@ export default async function globalSetup() {
   // a full tanker-receipt lifecycle, never a direct ledger write.
   const supplier2 = await json<{ id: string }>(`${API_BASE}/organizations/${org.id}/suppliers`, {
     method: "POST",
-    headers: adminAuth,
+    headers: ownerAuth,
     body: JSON.stringify({ name: "E2E Supplier 2" }),
   });
   const receipt2 = await json<{ id: string }>(
     `${API_BASE}/organizations/${org.id}/stations/${station2.id}/tanker-receipts`,
     {
       method: "POST",
-      headers: adminAuth,
+      headers: ownerAuth,
       body: JSON.stringify({
         tank_id: tank2.id,
         supplier_id: supplier2.id,
@@ -282,13 +313,13 @@ export default async function globalSetup() {
   );
   await json(
     `${API_BASE}/organizations/${org.id}/stations/${station2.id}/tanker-receipts/${receipt2.id}/record-unload`,
-    { method: "PATCH", headers: adminAuth, body: JSON.stringify({ post_receipt_tank_reading: "10000" }) }
+    { method: "PATCH", headers: ownerAuth, body: JSON.stringify({ post_receipt_tank_reading: "10000" }) }
   );
   await json(
     `${API_BASE}/organizations/${org.id}/stations/${station2.id}/tanker-receipts/${receipt2.id}/approve`,
     {
       method: "PATCH",
-      headers: adminAuth,
+      headers: ownerAuth,
       body: JSON.stringify({
         accepted_quantity: "10000",
         payable_quantity_basis: "invoice_quantity",
@@ -304,17 +335,17 @@ export default async function globalSetup() {
   // role-based tests would race on the same one-shift-per-day slot.
   const station3 = await json<{ id: string }>(`${API_BASE}/organizations/${org.id}/stations`, {
     method: "POST",
-    headers: adminAuth,
+    headers: ownerAuth,
     body: JSON.stringify({ name: "E2E Station 3", code: `E2E3-${RUN_ID}` }),
   });
   const fuelGrade3 = await json<{ id: string }>(`${API_BASE}/organizations/${org.id}/fuel-grades`, {
     method: "POST",
-    headers: adminAuth,
+    headers: ownerAuth,
     body: JSON.stringify({ name: "E2E Kerosene", code: `EK${RUN_ID.slice(-4)}` }),
   });
   const tank3 = await json<{ id: string }>(`${API_BASE}/organizations/${org.id}/stations/${station3.id}/tanks`, {
     method: "POST",
-    headers: adminAuth,
+    headers: ownerAuth,
     body: JSON.stringify({
       code: "T1",
       name: "Tank 1",
@@ -325,16 +356,16 @@ export default async function globalSetup() {
   });
   const dispenser3 = await json<{ id: string }>(
     `${API_BASE}/organizations/${org.id}/stations/${station3.id}/dispensers`,
-    { method: "POST", headers: adminAuth, body: JSON.stringify({ code: "D1", name: "Dispenser 1" }) }
+    { method: "POST", headers: ownerAuth, body: JSON.stringify({ code: "D1", name: "Dispenser 1" }) }
   );
   await json(`${API_BASE}/organizations/${org.id}/stations/${station3.id}/dispensers/${dispenser3.id}/nozzles`, {
     method: "POST",
-    headers: adminAuth,
+    headers: ownerAuth,
     body: JSON.stringify({ code: "N1", tank_id: tank3.id }),
   });
   await json(`${API_BASE}/organizations/${org.id}/stations/${station3.id}/fuel-prices`, {
     method: "POST",
-    headers: adminAuth,
+    headers: ownerAuth,
     body: JSON.stringify({
       fuel_grade_id: fuelGrade3.id,
       price_per_litre: "280.00",
@@ -342,13 +373,11 @@ export default async function globalSetup() {
     }),
   });
 
-  // Real, non-superuser, role-scoped users - the pre-existing "owner" above
-  // is actually a second superuser (a login convenience), which bypasses
-  // every permission check and so never exercises real RBAC. These seven
-  // users are created through the real API (POST .../users, then POST
-  // .../users/{id}/roles), the same way an Owner would invite staff in
-  // production, so frontend permission-gating tests see real role data.
-  const roles = await json<{ id: string; name: string }[]>(`${API_BASE}/roles`, { headers: adminAuth });
+  // Real, role-scoped users, created through the real API (POST
+  // .../users, then POST .../users/{id}/roles) using the real Owner's own
+  // token - the same way an Owner would add staff in production - so
+  // frontend permission-gating tests see real role data.
+  const roles = await json<{ id: string; name: string }[]>(`${API_BASE}/roles`, { headers: ownerAuth });
   const roleId = (name: string) => {
     const role = roles.find((r) => r.name === name);
     if (!role) throw new Error(`Seed role "${name}" not found - was permissions-roles seeded?`);
@@ -361,12 +390,12 @@ export default async function globalSetup() {
     const email = `e2e-role-${slug}-${RUN_ID}@e2e-dev.com`;
     const created = await json<{ id: string }>(`${API_BASE}/organizations/${org.id}/users`, {
       method: "POST",
-      headers: adminAuth,
+      headers: ownerAuth,
       body: JSON.stringify({ email, full_name: `E2E ${roleName}`, password: ROLE_PASSWORD }),
     });
     await json(`${API_BASE}/organizations/${org.id}/users/${created.id}/roles`, {
       method: "POST",
-      headers: adminAuth,
+      headers: ownerAuth,
       body: JSON.stringify({ role_id: roleId(roleName), station_id: stationScoped ? station.id : null }),
     });
     if (stationScoped) {
@@ -375,7 +404,7 @@ export default async function globalSetup() {
       // comment above for why not station 1 or 2).
       await json(`${API_BASE}/organizations/${org.id}/users/${created.id}/roles`, {
         method: "POST",
-        headers: adminAuth,
+        headers: ownerAuth,
         body: JSON.stringify({ role_id: roleId(roleName), station_id: station3.id }),
       });
     }
@@ -391,6 +420,8 @@ export default async function globalSetup() {
   const auditor = await createRoleUser("Auditor / Viewer", true);
 
   const state = {
+    adminEmail: SUPERUSER_EMAIL,
+    adminPassword: SUPERUSER_PASSWORD,
     ownerEmail: OWNER_EMAIL,
     ownerPassword: OWNER_PASSWORD,
     orgId: org.id,

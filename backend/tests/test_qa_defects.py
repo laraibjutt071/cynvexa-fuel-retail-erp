@@ -97,19 +97,25 @@ async def test_create_station_for_nonexistent_organization_gives_404_not_409(
     client: AsyncClient, superuser
 ):
     """
-    Defect: create_station's except IntegrityError always raises a 409
-    "code already exists" ConflictError, which is correct for the unique
-    constraint but WRONG when the real cause is a foreign-key violation
-    because organization_id doesn't exist (only reachable today via the
-    superuser bypass, which skips the org-membership check that would
-    otherwise guarantee the org exists). The client gets a misleading
-    "duplicate code" error for what is actually a "no such organization".
+    Defect (pre-Phase-5b): create_station's except IntegrityError always
+    raised a 409 "code already exists" ConflictError, which is correct for
+    the unique constraint but WRONG when the real cause is a foreign-key
+    violation because organization_id doesn't exist. That path was only
+    reachable at all via the superuser is_superuser bypass in
+    require_permission (no real UserStationRole can ever reference a
+    nonexistent organization) - Phase 5b closed that bypass for tenant
+    business-data writes, so station creation itself now gets a plain 403
+    before it can even reach the station code, and is covered by
+    test_support_sessions.py instead. The same "a nonexistent target must
+     never produce anything misleading" intent is re-pointed here at the
+    new architecture's equivalent entry point: starting a support session
+    for a nonexistent organization.
     """
     token = await login(client, "platform-admin@cynvexa-platform-dev.com")
     fake_org_id = uuid.uuid4()
     resp = await client.post(
-        f"/organizations/{fake_org_id}/stations",
-        json={"name": "Ghost Station", "code": "GHOST-1"},
+        "/platform/support-sessions",
+        json={"organization_id": str(fake_org_id), "reason": "Checking a reported issue.", "duration_minutes": 15},
         headers=auth_headers(token),
     )
     assert resp.status_code == 404, (

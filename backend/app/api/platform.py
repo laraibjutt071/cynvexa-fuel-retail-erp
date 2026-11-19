@@ -145,27 +145,11 @@ async def platform_stats(
     }
 
 
-@router.get("/organizations", response_model=list[PlatformOrganizationRow])
-async def list_organizations_enriched(
-    q: str | None = Query(default=None, max_length=200),
-    status: str | None = Query(default=None, pattern="^(active|suspended)$"),
-    current_user: User = Depends(require_superuser),
-    db: AsyncSession = Depends(get_db),
-) -> list[PlatformOrganizationRow]:
-    """The Super Admin client directory (Phase 5c) - one row per
-    organization with its owner, real station/employee counts, and last
-    activity, all aggregated server-side with GROUP BY queries (never
-    one query per organization) so this stays cheap regardless of how
-    many tenants exist."""
-    org_stmt = select(Organization)
-    if q:
-        org_stmt = org_stmt.where(Organization.name.ilike(f"%{q}%"))
-    if status == "active":
-        org_stmt = org_stmt.where(Organization.is_active.is_(True))
-    elif status == "suspended":
-        org_stmt = org_stmt.where(Organization.is_active.is_(False))
-    org_stmt = org_stmt.order_by(Organization.created_at.desc())
-    orgs = list((await db.execute(org_stmt)).scalars().all())
+async def _enrich_organizations(db: AsyncSession, orgs: list[Organization]) -> list[PlatformOrganizationRow]:
+    """Shared by the list and single-organization enriched reads (Phase
+    5c/5b) - one row per organization with its owner, real
+    station/employee counts, and last activity, aggregated server-side
+    with GROUP BY queries (never one query per organization)."""
     if not orgs:
         return []
     org_ids = [o.id for o in orgs]
@@ -226,6 +210,43 @@ async def list_organizations_enriched(
         )
         for org in orgs
     ]
+
+
+@router.get("/organizations", response_model=list[PlatformOrganizationRow])
+async def list_organizations_enriched(
+    q: str | None = Query(default=None, max_length=200),
+    status: str | None = Query(default=None, pattern="^(active|suspended)$"),
+    current_user: User = Depends(require_superuser),
+    db: AsyncSession = Depends(get_db),
+) -> list[PlatformOrganizationRow]:
+    """The Super Admin client directory (Phase 5c)."""
+    org_stmt = select(Organization)
+    if q:
+        org_stmt = org_stmt.where(Organization.name.ilike(f"%{q}%"))
+    if status == "active":
+        org_stmt = org_stmt.where(Organization.is_active.is_(True))
+    elif status == "suspended":
+        org_stmt = org_stmt.where(Organization.is_active.is_(False))
+    org_stmt = org_stmt.order_by(Organization.created_at.desc())
+    orgs = list((await db.execute(org_stmt)).scalars().all())
+    return await _enrich_organizations(db, orgs)
+
+
+@router.get("/organizations/{organization_id}", response_model=PlatformOrganizationRow)
+async def get_organization_enriched(
+    organization_id: uuid.UUID,
+    current_user: User = Depends(require_superuser),
+    db: AsyncSession = Depends(get_db),
+) -> PlatformOrganizationRow:
+    """Phase 5b: lets the Super Admin review a target organization's
+    identity (before deciding to start a support session) without that
+    lookup itself requiring one - this is the same directory data
+    list_organizations_enriched already exposes, just for one row."""
+    org = (await db.execute(select(Organization).where(Organization.id == organization_id))).scalar_one_or_none()
+    if org is None:
+        raise NotFoundError("Organization not found.")
+    rows = await _enrich_organizations(db, [org])
+    return rows[0]
 
 
 @router.get("/audit-log", response_model=list[AuditLogRead])

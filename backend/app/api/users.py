@@ -185,7 +185,11 @@ async def assign_role(
     # scoped to one station must not be able to grant an org-wide (or a
     # different station's) role to someone else. See actor_can_grant_scope's
     # docstring for why this can't just reuse require_permission's check.
-    if not current_user.is_superuser and not await actor_can_grant_scope(
+    # No support-session path here (Phase 5b): a superuser with no real
+    # tenant role in this org cannot grant/revoke roles at all - role
+    # assignment is one of the actions deliberately excluded from support
+    # sessions, which are read-only.
+    if not await actor_can_grant_scope(
         db,
         user_id=current_user.id,
         organization_id=organization_id,
@@ -268,7 +272,8 @@ async def revoke_role(
     if assignment is None:
         raise NotFoundError("Role assignment not found.")
 
-    if not current_user.is_superuser and not await actor_can_grant_scope(
+    # No support-session path here either, same reasoning as assign_role above.
+    if not await actor_can_grant_scope(
         db,
         user_id=current_user.id,
         organization_id=organization_id,

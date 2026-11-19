@@ -36,6 +36,7 @@ from app.api import (
     shifts,
     stations,
     subscriptions,
+    support_sessions,
     supplier_ledger,
     suppliers,
     tanker_receipts,
@@ -171,6 +172,7 @@ def create_app() -> FastAPI:
     app.include_router(platform.public_router)
     app.include_router(invitations.router)
     app.include_router(invitations.public_router)
+    app.include_router(support_sessions.router)
     app.include_router(subscriptions.router)
 
     return app

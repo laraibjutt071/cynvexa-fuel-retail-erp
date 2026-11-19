@@ -60,8 +60,10 @@ async def create_invitation(
     await get_organization_or_404(db, organization_id)
 
     # Same scope check assign_role already uses (app/api/users.py) - an
-    # inviter cannot pre-grant a role at a wider scope than their own.
-    if not current_user.is_superuser and not await actor_can_grant_scope(
+    # inviter cannot pre-grant a role at a wider scope than their own. No
+    # support-session path here (Phase 5b): invitations are a write, and
+    # support sessions are read-only, same as role assignment.
+    if not await actor_can_grant_scope(
         db, user_id=current_user.id, organization_id=organization_id, target_station_id=payload.station_id,
         permission_code=USER_ASSIGN_ROLE,
     ):

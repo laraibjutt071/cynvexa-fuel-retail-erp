@@ -34,7 +34,11 @@ async def record_inventory_movement(
     await get_station_or_404(db, organization_id, station_id)
 
     if payload.movement_type in ADJUSTMENT_TYPES:
-        allowed = current_user.is_superuser or await user_has_permission(
+        # No support-session path here (Phase 5b): a stock adjustment
+        # requires a real role grant of this permission, full stop - a
+        # superuser with no tenant role in this org cannot adjust
+        # inventory, session or not.
+        allowed = await user_has_permission(
             db,
             user_id=current_user.id,
             organization_id=organization_id,

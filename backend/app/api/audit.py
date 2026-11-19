@@ -9,6 +9,7 @@ from app.api.deps import get_db, require_permission
 from app.core.csv_export import csv_response
 from app.core.permission_codes import AUDIT_READ
 from app.core.permissions import get_station_visibility_scope
+from app.core.support_sessions import superuser_visible_station_ids
 from app.exceptions import ValidationFailedError
 from app.models.audit_log import AuditLog
 from app.models.user import User
@@ -48,11 +49,17 @@ def _build_filtered_stmt(
 async def _apply_visibility_scope(
     db: AsyncSession, stmt, *, current_user: User, organization_id: uuid.UUID
 ):
+    # require_permission already confirmed access - via a real role, or
+    # (for a superuser with none) an active support session. Either way,
+    # a station-scoped grant must not see another station's events.
     if current_user.is_superuser:
-        return stmt
-    visible_station_ids = await get_station_visibility_scope(
-        db, user_id=current_user.id, organization_id=organization_id, permission_code=AUDIT_READ
-    )
+        visible_station_ids = await superuser_visible_station_ids(
+            db, current_user=current_user, organization_id=organization_id
+        )
+    else:
+        visible_station_ids = await get_station_visibility_scope(
+            db, user_id=current_user.id, organization_id=organization_id, permission_code=AUDIT_READ
+        )
     if visible_station_ids is not None:
         stmt = stmt.where((AuditLog.station_id.is_(None)) | (AuditLog.station_id.in_(visible_station_ids)))
     return stmt
