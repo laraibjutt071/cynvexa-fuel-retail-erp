@@ -23,6 +23,7 @@ from app.api import (
     inventory_movements,
     nozzle_overview,
     nozzles,
+    org_reports,
     organizations,
     payment_methods,
     platform,
@@ -164,6 +165,7 @@ def create_app() -> FastAPI:
     app.include_router(reports.router)
     app.include_router(reports.org_router)
     app.include_router(reports.supplier_report_router)
+    app.include_router(org_reports.router)
     app.include_router(expense_categories.router)
     app.include_router(shift_templates.router)
     app.include_router(attendance.attendance_router)

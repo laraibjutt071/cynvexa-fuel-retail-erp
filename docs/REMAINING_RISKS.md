@@ -79,6 +79,12 @@ Deliberately not built this pass - triaged, not missed:
 
 **New, narrow risk introduced**: subscription *status* (trial/active/past_due/canceled/expired) still has no bearing on access - `Subscription`'s own docstring already flagged this ("Access is NOT currently restricted when a subscription lapses") before this phase, and Phase 8a does not change that. Plan limit enforcement and subscription-status enforcement are two different things; only the first is now built. A canceled/expired subscription's organization can still create stations/users right up to its plan's numeric limit, with no automated consequence for the lapsed billing status itself. Not fixed this phase - same reasoning as the original note: there is no payment gateway wired in, so "enforce on lapse" has no real trigger yet.
 
+## Phase 8b — Organization-wide aggregation (2026-11-19)
+
+**Closed**: an organization with multiple stations previously had no way to see combined sales, revenue, expenses, stock or attendance across them - only one station at a time. Six new `/organizations/{id}/reports/*` endpoints aggregate the existing per-station calculations (never a parallel calculation), with station authorization resolved the same way `pending-approvals` already did (now shared via `app/core/report_scope.py` instead of duplicated). Full detail in `docs/PHASE_8B_ORGANIZATION_AGGREGATION_REPORT.md`.
+
+**New, narrow limitation introduced**: the per-shift revenue computation this phase reuses is O(shifts in the date range) - correct and consistent with the existing single-station report, but not a single SQL aggregate. For an organization with very many approved shifts in a wide date range, this new org-wide endpoint will be proportionally slower than a single-station call over the same range. Not fixed this phase - redesigning the revenue calculation into a different shape was explicitly out of scope ("reuse existing per-station calculation services... avoid duplicating business logic").
+
 ## Pilot Day 2 — Reading Corrections, Credit Customer Enhancement (2026-11-14)
 
 ### New risks introduced

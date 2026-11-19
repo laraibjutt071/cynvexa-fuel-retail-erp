@@ -13,6 +13,7 @@ from app.core.fuel_grade_lookup import get_fuel_grades_by_id
 from app.core.inventory import get_inventory_stock
 from app.core.permission_codes import REPORT_READ, SUPPLIER_LEDGER_READ
 from app.core.permissions import get_station_visibility_scope
+from app.core.report_scope import resolve_visible_station_ids
 from app.core.support_sessions import superuser_visible_station_ids
 from app.core.reconciliation import get_total_tender_amount
 from app.core.revenue import compute_expected_fuel_revenue_by_grade
@@ -387,15 +388,9 @@ async def pending_approvals_report(
     """
     await get_organization_or_404(db, organization_id)
 
-    visible_station_ids: set[uuid.UUID] | None = None
-    if current_user.is_superuser:
-        visible_station_ids = await superuser_visible_station_ids(
-            db, current_user=current_user, organization_id=organization_id
-        )
-    else:
-        visible_station_ids = await get_station_visibility_scope(
-            db, user_id=current_user.id, organization_id=organization_id, permission_code=REPORT_READ
-        )
+    visible_station_ids = await resolve_visible_station_ids(
+        db, current_user=current_user, organization_id=organization_id, permission_code=REPORT_READ
+    )
 
     def _station_filter(column):
         if visible_station_ids is None:
@@ -491,6 +486,41 @@ async def pending_approvals_report(
     )
 
 
+def categorize_expenses(expenses: list[Expense]) -> list[ExpenseSummaryRow]:
+    """
+    The one place that buckets a set of Expense rows by category into
+    total/approved/pending/rejected - shared by the single-station report
+    below and the organization-wide one (app/api/org_reports.py) so the
+    two can never define "approved expenses" differently. A reversed
+    expense still counts toward `total_amount` (it was a real recorded
+    expense) but not toward any status bucket - this is the existing,
+    established behavior, preserved exactly, not newly introduced here.
+    """
+    by_cat: dict[str, dict] = {}
+    for e in expenses:
+        bucket = by_cat.setdefault(e.category, {
+            "total": Decimal(0), "approved": Decimal(0),
+            "pending": Decimal(0), "rejected": Decimal(0), "count": 0,
+        })
+        bucket["total"] += e.amount
+        bucket["count"] += 1
+        if e.reversed_at is not None:
+            pass
+        elif e.status == ExpenseStatus.APPROVED.value:
+            bucket["approved"] += e.amount
+        elif e.status == ExpenseStatus.PENDING.value:
+            bucket["pending"] += e.amount
+        elif e.status == ExpenseStatus.REJECTED.value:
+            bucket["rejected"] += e.amount
+    return [
+        ExpenseSummaryRow(
+            category=cat, total_amount=v["total"], approved_amount=v["approved"],
+            pending_amount=v["pending"], rejected_amount=v["rejected"], count=v["count"],
+        )
+        for cat, v in sorted(by_cat.items())
+    ]
+
+
 @router.get("/expense-summary", response_model=ExpenseSummaryReport)
 async def expense_summary_report(
     organization_id: uuid.UUID,
@@ -511,29 +541,7 @@ async def expense_summary_report(
         )
     )
     expenses = result.scalars().all()
-    by_cat: dict[str, dict] = {}
-    for e in expenses:
-        bucket = by_cat.setdefault(e.category, {
-            "total": Decimal(0), "approved": Decimal(0),
-            "pending": Decimal(0), "rejected": Decimal(0), "count": 0,
-        })
-        bucket["total"] += e.amount
-        bucket["count"] += 1
-        if e.reversed_at is not None:
-            pass
-        elif e.status == ExpenseStatus.APPROVED.value:
-            bucket["approved"] += e.amount
-        elif e.status == ExpenseStatus.PENDING.value:
-            bucket["pending"] += e.amount
-        elif e.status == ExpenseStatus.REJECTED.value:
-            bucket["rejected"] += e.amount
-    rows = [
-        ExpenseSummaryRow(
-            category=cat, total_amount=v["total"], approved_amount=v["approved"],
-            pending_amount=v["pending"], rejected_amount=v["rejected"], count=v["count"],
-        )
-        for cat, v in sorted(by_cat.items())
-    ]
+    rows = categorize_expenses(expenses)
     grand_total = sum((r.total_amount for r in rows), Decimal(0))
     grand_approved = sum((r.approved_amount for r in rows), Decimal(0))
     return ExpenseSummaryReport(
