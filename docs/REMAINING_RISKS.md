@@ -85,6 +85,14 @@ Deliberately not built this pass - triaged, not missed:
 
 **New, narrow limitation introduced**: the per-shift revenue computation this phase reuses is O(shifts in the date range) - correct and consistent with the existing single-station report, but not a single SQL aggregate. For an organization with very many approved shifts in a wide date range, this new org-wide endpoint will be proportionally slower than a single-station call over the same range. Not fixed this phase - redesigning the revenue calculation into a different shape was explicitly out of scope ("reuse existing per-station calculation services... avoid duplicating business logic").
 
+## Phase 8c — Consolidated multi-station dashboard (2026-11-20)
+
+**Closed**: `lib/permissions.ts`'s `can()` still treated every superuser as an unconditional permission bypass, stale since Phase 5b closed that boundary on the backend - flagged in Phase 8's own audit, fixed before building this phase's new UI on top of it (which otherwise would have shipped the same stale assumption). A superuser's `can()` now requires an active, scope-matching support session and a `:read` code, mirroring the backend exactly. Full detail in `docs/PHASE_8C_CONSOLIDATED_DASHBOARD_REPORT.md`.
+
+**Found and fixed within this phase, not a carried-over risk**: the new Company Overview page's date-range-driven tabs had no stale-response guard - two quick edits to the date filter could let an earlier (possibly erroring, from a momentarily invalid intermediate range) response overwrite a later, correct one. Fixed with a `cancelled` flag per effect; caught by the new Playwright date-filter test, not by code review - worth remembering as a pattern for any future multi-field-driven fetch in this codebase.
+
+**New, narrow limitation introduced**: the persistent station switcher is a plain `<select>`, with no search/typeahead - fine for the station counts this app has been built and tested against, but would become unwieldy for an organization with dozens of stations. Not fixed this phase - a UI refinement, not a correctness or security gap.
+
 ## Pilot Day 2 — Reading Corrections, Credit Customer Enhancement (2026-11-14)
 
 ### New risks introduced

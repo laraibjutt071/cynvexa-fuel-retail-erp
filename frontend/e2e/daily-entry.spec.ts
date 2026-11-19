@@ -69,7 +69,11 @@ test.describe("Daily Entry workspace", () => {
     // thousands-separator formatting to this table - a real, intentional
     // display change, not a bug this assertion should paper over.
     await page.getByRole("tab", { name: "Sales & Collections" }).click();
-    await page.locator("select").first().selectOption({ label: "Cash (Cash)" });
+    // Scoped to <main>, not the whole page: Phase 8c added a persistent
+    // station-switcher <select> to the sidebar, which a bare
+    // page.locator("select").first() would now match instead of this
+    // tab's own payment-method dropdown.
+    await page.locator("main select").first().selectOption({ label: "Cash (Cash)" });
     await page.getByPlaceholder("Amount").fill("28000");
     await page.getByRole("button", { name: "Record" }).click();
     await expect(page.getByRole("cell", { name: "28,000.00" })).toBeVisible();

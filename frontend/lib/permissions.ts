@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo } from "react";
 import { useAuth } from "./auth-context";
+import { sessionCoversScope, useActiveSupportSession } from "./support-session";
 
 /**
  * One canonical permission-resolution rule, used everywhere a page or nav
@@ -11,15 +12,23 @@ import { useAuth } from "./auth-context";
  *
  * A permission is held for this org/station if the signed-in user has an
  * org-wide role in `orgId` (station_id === null) or a role scoped to
- * exactly `stationId`. A superuser bypasses every check, matching the
- * backend's own `require_permission` (app/api/deps.py) - the frontend
- * must never be stricter or looser than that boundary, only mirror it for
- * UX. The backend remains the real security boundary regardless of what
- * this hook decides to show.
+ * exactly `stationId`.
+ *
+ * A superuser is NOT an unconditional bypass here (Phase 5b closed that
+ * on the backend; this hook used to still assume it, which Phase 8's
+ * audit flagged as stale - see docs/PHASE_8_MULTI_STATION_SAAS_AUDIT.md
+ * §4). A superuser only "can" something when they hold an active,
+ * scope-matching support session (app/core/support_sessions.py), and
+ * even then only for a `:read` permission code - a session never grants
+ * a write, so a write-gated control correctly stays hidden regardless of
+ * session state. This mirrors the backend exactly; the backend remains
+ * the real security boundary regardless of what this hook decides to
+ * show.
  */
 export function usePermissions(orgId?: string, stationId?: string | null) {
   const { user, loading } = useAuth();
   const isSuperuser = user?.is_superuser ?? false;
+  const supportSession = useActiveSupportSession();
 
   const permissionCodes = useMemo(() => {
     const set = new Set<string>();
@@ -31,14 +40,20 @@ export function usePermissions(orgId?: string, stationId?: string | null) {
     return set;
   }, [user, orgId, stationId]);
 
+  const hasMatchingSession = useMemo(
+    () => sessionCoversScope(supportSession, orgId, stationId ?? null),
+    [supportSession, orgId, stationId]
+  );
+
   const roleName = useMemo(() => {
     for (const role of user?.station_roles ?? []) {
       if (orgId && role.organization_id !== orgId) continue;
       if (stationId && role.station_id !== null && role.station_id !== stationId) continue;
       return role.role_name;
     }
-    return isSuperuser ? "Platform Admin" : null;
-  }, [user, orgId, stationId, isSuperuser]);
+    if (!isSuperuser) return null;
+    return hasMatchingSession ? "Platform Admin (support session)" : "Platform Admin";
+  }, [user, orgId, stationId, isSuperuser, hasMatchingSession]);
 
   const can = useCallback(
     (codes: string | string[]): boolean => {
@@ -48,11 +63,15 @@ export function usePermissions(orgId?: string, stationId?: string | null) {
       // "nothing yet". Callers that need a loading state of their own
       // should check `loading` separately.
       if (loading) return false;
-      if (isSuperuser) return true;
       const list = Array.isArray(codes) ? codes : [codes];
+      if (isSuperuser) {
+        if (supportSession === undefined) return false; // still resolving - don't flash true
+        if (!hasMatchingSession) return false;
+        return list.some((c) => c.endsWith(":read"));
+      }
       return list.some((c) => permissionCodes.has(c));
     },
-    [loading, isSuperuser, permissionCodes]
+    [loading, isSuperuser, supportSession, hasMatchingSession, permissionCodes]
   );
 
   return { can, loading, isSuperuser, roleName, permissionCodes };

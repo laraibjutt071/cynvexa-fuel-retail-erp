@@ -191,6 +191,149 @@ export interface RoleAssignment {
   created_at: string;
 }
 
+// ---- Phase 8b: organization-wide (multi-station) aggregate reports ----
+
+export interface ExpenseSummaryRow {
+  category: string;
+  total_amount: string;
+  approved_amount: string;
+  pending_amount: string;
+  rejected_amount: string;
+  count: number;
+}
+
+export interface OrgSalesGradeRow {
+  fuel_grade_id: string;
+  fuel_grade_code: string;
+  fuel_grade_name: string;
+  litres_sold: string;
+  expected_revenue: string;
+}
+
+export interface OrgSalesStationRow {
+  station_id: string;
+  station_name: string;
+  litres_sold: string;
+  expected_revenue: string;
+}
+
+export interface OrgSalesReport {
+  date_from: string;
+  date_to: string;
+  shift_count: number;
+  total_litres_sold: string;
+  total_expected_revenue: string;
+  by_fuel_grade: OrgSalesGradeRow[];
+  by_station: OrgSalesStationRow[];
+}
+
+export interface OrgRevenueStationRow {
+  station_id: string;
+  station_name: string;
+  expected_revenue: string;
+  total_tender_amount: string;
+  cash_amount: string;
+  card_amount: string;
+  digital_amount: string;
+  credit_amount: string;
+}
+
+export interface OrgRevenueReport {
+  date_from: string;
+  date_to: string;
+  total_recognized_revenue: string;
+  total_tender_amount: string;
+  cash_amount: string;
+  card_amount: string;
+  digital_amount: string;
+  credit_amount: string;
+  by_station: OrgRevenueStationRow[];
+}
+
+export interface OrgExpenseStationRow {
+  station_id: string;
+  station_name: string;
+  total_amount: string;
+  approved_amount: string;
+}
+
+export interface OrgExpenseReport {
+  date_from: string;
+  date_to: string;
+  by_category: ExpenseSummaryRow[];
+  by_station: OrgExpenseStationRow[];
+  grand_total: string;
+  grand_approved: string;
+}
+
+export interface OrgStockTankRow {
+  tank_id: string;
+  tank_code: string;
+  station_id: string;
+  station_name: string;
+  fuel_grade_id: string;
+  fuel_grade_name: string;
+  book_stock: string;
+  last_physical_dip_reading: string | null;
+  last_physical_dip_at: string | null;
+}
+
+export interface OrgStockGradeRow {
+  fuel_grade_id: string;
+  fuel_grade_name: string;
+  total_book_stock: string;
+}
+
+export interface OrgStockReport {
+  generated_at: string;
+  by_fuel_grade: OrgStockGradeRow[];
+  tanks: OrgStockTankRow[];
+}
+
+export interface OrgAttendanceDay {
+  attendance_date: string;
+  present_count: number;
+  absent_count: number;
+  late_count: number;
+  half_day_count: number;
+  leave_count: number;
+}
+
+export interface OrgAttendanceStationRow {
+  station_id: string;
+  station_name: string;
+  present_count: number;
+  absent_count: number;
+  late_count: number;
+  half_day_count: number;
+  leave_count: number;
+}
+
+export interface OrgAttendanceReport {
+  date_from: string;
+  date_to: string;
+  total_employees: number;
+  days: OrgAttendanceDay[];
+  by_station: OrgAttendanceStationRow[];
+}
+
+export interface StationPerformanceRow {
+  station_id: string;
+  station_name: string;
+  litres_sold: string;
+  expected_revenue: string;
+  total_tender_amount: string;
+  approved_expenses: string;
+  total_book_stock: string;
+  employee_count: number;
+}
+
+export interface OrgStationPerformanceReport {
+  date_from: string;
+  date_to: string;
+  rows: StationPerformanceRow[];
+}
+
 export interface Station {
   id: string;
   organization_id: string;

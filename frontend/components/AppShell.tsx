@@ -12,6 +12,7 @@ import {
   Gauge,
   Languages,
   LayoutDashboard,
+  Layers,
   LogOut,
   Menu,
   Receipt,
@@ -33,6 +34,7 @@ import { usePermissions } from "@/lib/permissions";
 import { useLanguage } from "@/lib/i18n/context";
 import type { TranslationKey } from "@/lib/i18n/translations";
 import { ThemeToggleIcon, ThemeToggleRow } from "@/components/ui/ThemeToggle";
+import { StationSwitcher } from "@/components/StationSwitcher";
 
 interface NavItem {
   labelKey: TranslationKey;
@@ -50,6 +52,12 @@ interface NavItem {
 function buildNav(orgId: string, stationId: string | null): NavItem[] {
   const station = stationId ?? "";
   return [
+    {
+      labelKey: "nav.companyOverview",
+      href: `/dashboard/org/${orgId}/overview`,
+      icon: Layers,
+      anyPermission: ["report:read"],
+    },
     {
       labelKey: "nav.dashboard",
       href: `/dashboard/org/${orgId}/station/${station}/today`,
@@ -187,6 +195,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
         </div>
       </div>
+      <StationSwitcher orgId={orgId} currentStationId={stationId ?? null} />
       <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 pb-4">
         {nav.map((item) => {
           const active = pathname === item.href.split("?")[0];

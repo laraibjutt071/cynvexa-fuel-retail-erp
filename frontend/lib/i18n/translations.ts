@@ -14,6 +14,7 @@ export const SUPPORTED_LANGUAGES: { code: Language; label: string }[] = [
 
 export const translations = {
   // Nav / shell
+  "nav.companyOverview": { en: "Company Overview", ur: "Company Overview" },
   "nav.dashboard": { en: "Dashboard", ur: "Dashboard" },
   "nav.dailyEntry": { en: "Daily Entry", ur: "Aaj ka Kaam" },
   "nav.fuelStock": { en: "Fuel Stock", ur: "Fuel Stock" },
