@@ -28,6 +28,7 @@ export const translations = {
   "nav.reconciliation": { en: "Reconciliation", ur: "Hisaab Milan" },
   "nav.reports": { en: "Reports", ur: "Reports" },
   "nav.attendance": { en: "Attendance", ur: "Hazri" },
+  "nav.payroll": { en: "Payroll", ur: "Payroll" },
   "nav.approvals": { en: "Approvals", ur: "Manzoori" },
   "nav.alerts": { en: "Alerts", ur: "Alerts" },
   "nav.auditHistory": { en: "Audit History", ur: "Audit History" },

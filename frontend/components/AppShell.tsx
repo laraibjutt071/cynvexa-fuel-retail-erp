@@ -148,6 +148,13 @@ function buildNav(orgId: string, stationId: string | null): NavItem[] {
       needsStation: true,
     },
     {
+      labelKey: "nav.payroll",
+      href: `/dashboard/org/${orgId}/station/${station}/payroll`,
+      icon: Wallet,
+      anyPermission: ["payroll:manage"],
+      needsStation: true,
+    },
+    {
       labelKey: "nav.approvals",
       href: `/dashboard/org/${orgId}?tab=overview`,
       icon: CheckSquare,
