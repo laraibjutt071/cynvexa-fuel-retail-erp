@@ -24,6 +24,14 @@ class Settings(BaseSettings):
 
     database_url: str = "postgresql+asyncpg://cynvexa:cynvexa@localhost:5432/cynvexa"
 
+    # A dedicated database for the automated test suite only - never read by
+    # the running application itself (nothing in app/ references this field
+    # except the test suite's own conftest.py). Kept here, not hardcoded in
+    # conftest.py, so it goes through the same env-file/env-var loading path
+    # as every other setting and is visible in one place. See
+    # docs/TEST_DATABASE_ISOLATION_REPORT.md for why this exists.
+    test_database_url: str | None = None
+
     jwt_secret_key: str
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 15

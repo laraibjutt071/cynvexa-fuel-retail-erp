@@ -10,10 +10,34 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
-os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-not-for-production-use-only")
-os.environ.setdefault(
-    "DATABASE_URL", "postgresql+asyncpg://cynvexa:cynvexa@localhost:5432/cynvexa_test"
+# The real development DATABASE_URL, captured before anything below
+# overrides it - used only as the "never run destructive operations here"
+# comparison value for the safety guard below. Never used to connect to
+# anything itself.
+_DEVELOPMENT_DATABASE_URL = os.environ.get(
+    "DATABASE_URL", "postgresql+asyncpg://cynvexa:cynvexa@localhost:5432/cynvexa"
 )
+
+# A dedicated test database is mandatory - no silent fallback to whatever
+# DATABASE_URL happens to be configured. This project's Docker Compose setup
+# always sets DATABASE_URL to the real local development database, so a
+# fallback here previously meant pytest's own destructive schema-reset
+# fixture ran against dev data more than once. See
+# docs/TEST_DATABASE_ISOLATION_REPORT.md for the incident history and why
+# this is enforced here, not just documented.
+_TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL")
+
+from app.core.test_db_safety import assert_safe_test_database  # noqa: E402
+
+assert_safe_test_database(_TEST_DATABASE_URL, _DEVELOPMENT_DATABASE_URL)
+
+os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-not-for-production-use-only")
+# An explicit overwrite, never setdefault: the application under test
+# (imported below via app.main) must resolve its own DATABASE_URL to this
+# same dedicated test database, so a real development value already
+# present in the environment can never silently win for requests made
+# through the ASGI test client.
+os.environ["DATABASE_URL"] = _TEST_DATABASE_URL
 os.environ.setdefault("ENV", "test")
 
 from app import models  # noqa: E402,F401
@@ -39,6 +63,11 @@ TestSessionLocal = async_sessionmaker(bind=test_engine, expire_on_commit=False, 
 @pytest_asyncio.fixture(scope="session", autouse=True, loop_scope="session")
 async def _create_schema():
     from sqlalchemy import text
+
+    # Re-verified immediately before the destructive statements below, not
+    # only once at module-import time above - the guard belongs at the
+    # point of use.
+    assert_safe_test_database(_TEST_DATABASE_URL, _DEVELOPMENT_DATABASE_URL)
 
     async with test_engine.begin() as conn:
         await conn.execute(text(
