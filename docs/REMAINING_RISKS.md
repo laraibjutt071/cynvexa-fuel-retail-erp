@@ -109,6 +109,14 @@ Everything else the audit found (inter-station fuel transfer missing, leave/over
 
 **New, narrow limitation introduced**: no i18n/Roman Urdu translation was added for the new Meter Events page or the new Readings/Review strings - consistent with the already-documented gap above (Phase 7 UX-upgrade pass) of several operational pages not yet being translated.
 
+## Phase 10b — Supplier Invoice & Payment UI (2026-11-20)
+
+**Closed**: supplier invoices and payments had full backend support (`app/api/suppliers.py`, `app/api/supplier_ledger.py`) but no frontend at all. A new `/dashboard/org/{orgId}/suppliers` page (directory, per-supplier invoices/payments/statement, cross-supplier balances) was built entirely against existing endpoints - no backend code was changed, no migration created. Full detail in `docs/PHASE_10B_SUPPLIER_INVOICE_PAYMENT_UI_REPORT.md`.
+
+**New gaps found, not fixed this phase (frontend-only scope, each would need a schema change)**: `SupplierInvoice` has no `due_date`, no `status`/approval field, and no per-invoice paid/outstanding tracking (`SupplierPayment` has no `invoice_id` - payments are supplier-level only). The UI does not fabricate any of these - it shows only the real, backend-computed supplier-level balance, consistent with "do not calculate or persist accounting balances in the frontend."
+
+**New local-development-environment hazard found (not a production issue)**: running the backend's full pytest suite concurrently with the Playwright e2e stack against this Docker Compose setup corrupts shared dev data. `backend/tests/conftest.py`'s session-scoped fixture runs `DROP SCHEMA public CASCADE` against whatever `DATABASE_URL` is configured, and this container has no separate `TEST_DATABASE_URL` - it points at the same local dev database the e2e suite seeds into. Production is unaffected (Render/Neon, entirely separate infrastructure), but a local contributor running both suites at once will see spurious failures (observed: a `UniqueViolationError` on `ix_permissions_code` and e2e login failures), not real regressions. **Going forward: never run the backend pytest suite and the Playwright suite at the same time against this stack** - confirmed by re-running each in isolation with clean results (362/362 backend, 47/47 Playwright).
+
 ## Pilot Day 2 — Reading Corrections, Credit Customer Enhancement (2026-11-14)
 
 ### New risks introduced

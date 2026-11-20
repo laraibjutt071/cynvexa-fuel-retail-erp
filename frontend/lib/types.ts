@@ -802,7 +802,59 @@ export interface Supplier {
   id: string;
   organization_id: string;
   name: string;
+  contact_phone: string | null;
+  contact_email: string | null;
   is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SupplierInvoice {
+  id: string;
+  organization_id: string;
+  supplier_id: string;
+  tanker_receipt_id: string | null;
+  reference: string | null;
+  amount: string;
+  invoice_date: string;
+  description: string | null;
+  created_by_user_id: string;
+  created_at: string;
+}
+
+export interface SupplierPayment {
+  id: string;
+  organization_id: string;
+  supplier_id: string;
+  amount: string;
+  payment_date: string;
+  reference: string | null;
+  recorded_by_user_id: string;
+  recorded_at: string;
+  approved_by_user_id: string | null;
+  approved_at: string | null;
+  reversed_by_user_id: string | null;
+  reversed_at: string | null;
+  reversal_reason: string | null;
+}
+
+export interface SupplierLedgerStatementEntry {
+  entry_date: string;
+  entry_type: string;
+  reference: string | null;
+  description: string | null;
+  amount: string;
+  running_balance: string;
+}
+
+export interface SupplierLedgerStatement {
+  supplier_id: string;
+  supplier_name: string;
+  date_from: string;
+  date_to: string;
+  opening_balance: string;
+  entries: SupplierLedgerStatementEntry[];
+  closing_balance: string;
 }
 
 export interface AttendanceRecord {

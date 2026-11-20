@@ -24,6 +24,7 @@ export const translations = {
   "nav.cashBank": { en: "Cash & Bank", ur: "Cash aur Bank" },
   "nav.creditSales": { en: "Credit Sales", ur: "Udhar Sale" },
   "nav.purchases": { en: "Purchases", ur: "Kharidari" },
+  "nav.suppliers": { en: "Suppliers", ur: "Suppliers" },
   "nav.reconciliation": { en: "Reconciliation", ur: "Hisaab Milan" },
   "nav.reports": { en: "Reports", ur: "Reports" },
   "nav.attendance": { en: "Attendance", ur: "Hazri" },

@@ -15,6 +15,7 @@ import {
   Layers,
   LogOut,
   Menu,
+  Package,
   Receipt,
   Settings,
   ShieldCheck,
@@ -118,6 +119,12 @@ function buildNav(orgId: string, stationId: string | null): NavItem[] {
       icon: Truck,
       anyPermission: ["fuel_receipt:read"],
       needsStation: true,
+    },
+    {
+      labelKey: "nav.suppliers",
+      href: `/dashboard/org/${orgId}/suppliers`,
+      icon: Package,
+      anyPermission: ["supplier:read"],
     },
     {
       labelKey: "nav.reconciliation",
