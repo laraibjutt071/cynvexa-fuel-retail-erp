@@ -24,7 +24,7 @@ export default function SettingsPage() {
   const { can } = usePermissions(orgId);
 
   return (
-    <main className="flex-1">
+    <div className="flex-1">
       <header className="border-b border-border bg-surface px-6 py-4">
         <div className="mx-auto max-w-5xl">
           <h1 className="text-lg font-semibold text-ink">{t("settings.title")}</h1>
@@ -49,7 +49,7 @@ export default function SettingsPage() {
           />
         )}
       </div>
-    </main>
+    </div>
   );
 }
 

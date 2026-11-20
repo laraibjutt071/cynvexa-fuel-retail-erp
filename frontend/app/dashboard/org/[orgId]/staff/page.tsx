@@ -101,7 +101,7 @@ export default function StaffPage() {
   ];
 
   return (
-    <main className="flex-1">
+    <div className="flex-1">
       <PageHeader
         title="Staff"
         breadcrumbs={[{ label: "Users & Settings", href: `/dashboard/org/${orgId}/settings` }, { label: "Staff" }]}
@@ -182,7 +182,7 @@ export default function StaffPage() {
         stations={stations}
         onInvited={loadInvitations}
       />
-    </main>
+    </div>
   );
 }
 

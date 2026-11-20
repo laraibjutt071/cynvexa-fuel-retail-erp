@@ -38,22 +38,22 @@ export default function SuppliersPage() {
   const [pageTab, setPageTab] = useState<"directory" | "balances">("directory");
 
   if (permLoading) {
-    return <main className="flex-1 px-6 py-10 text-sm text-ink-soft">Loading…</main>;
+    return <div className="flex-1 px-6 py-10 text-sm text-ink-soft">Loading…</div>;
   }
 
   if (!can("supplier:read")) {
     return (
-      <main className="flex-1">
+      <div className="flex-1">
         <PageHeader title="Suppliers" breadcrumbs={[{ label: "Dashboard" }, { label: "Suppliers" }]} />
         <div className="mx-auto max-w-3xl px-6 py-10">
           <AccessDenied message="Your role does not include supplier visibility." />
         </div>
-      </main>
+      </div>
     );
   }
 
   return (
-    <main className="flex-1">
+    <div className="flex-1">
       <PageHeader
         title="Suppliers"
         description="Supplier directory, invoices, payments and accounts-payable balances."
@@ -82,7 +82,7 @@ export default function SuppliersPage() {
           <BalancesTab orgId={orgId} authFetch={authFetch} canReadLedger={can("supplier_ledger:read")} />
         </TabPanel>
       </div>
-    </main>
+    </div>
   );
 }
 

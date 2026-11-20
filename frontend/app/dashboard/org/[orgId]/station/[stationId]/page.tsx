@@ -82,14 +82,14 @@ export default function StationDashboardPage() {
 
   if (loading || !user) {
     return (
-      <main className="flex flex-1 items-center justify-center">
+      <div className="flex flex-1 items-center justify-center">
         <p className="text-ink-soft">Loading…</p>
-      </main>
+      </div>
     );
   }
 
   return (
-    <main className="flex-1">
+    <div className="flex-1">
       <PageHeader
         title="Station dashboard"
         breadcrumbs={[
@@ -135,7 +135,7 @@ export default function StationDashboardPage() {
           </>
         )}
       </div>
-    </main>
+    </div>
   );
 }
 

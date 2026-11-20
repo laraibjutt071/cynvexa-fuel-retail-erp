@@ -85,14 +85,14 @@ export default function TankManagementPage() {
 
   if (loading || !user) {
     return (
-      <main className="flex flex-1 items-center justify-center">
+      <div className="flex flex-1 items-center justify-center">
         <p className="text-ink-soft">Loading…</p>
-      </main>
+      </div>
     );
   }
 
   return (
-    <main className="flex-1">
+    <div className="flex-1">
       <header className="border-b border-border bg-surface px-6 py-4">
         <div className="mx-auto max-w-5xl">
           <Link
@@ -223,6 +223,6 @@ export default function TankManagementPage() {
           )}
         </Card>
       </div>
-    </main>
+    </div>
   );
 }

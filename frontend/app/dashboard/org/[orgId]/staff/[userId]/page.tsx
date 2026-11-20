@@ -134,7 +134,7 @@ export default function EmployeeProfilePage() {
   }
 
   return (
-    <main className="flex-1">
+    <div className="flex-1">
       <PageHeader
         title={user.full_name}
         breadcrumbs={[
@@ -269,7 +269,7 @@ export default function EmployeeProfilePage() {
         confirmLabel={user.is_active ? "Deactivate" : "Reactivate"}
         confirmVariant={user.is_active ? "danger" : "primary"}
       />
-    </main>
+    </div>
   );
 }
 

@@ -30,19 +30,19 @@ export default function StationSettingsPage() {
   ]);
 
   if (loading) {
-    return <main className="flex flex-1 items-center justify-center"><p className="text-ink-soft">Loading…</p></main>;
+    return <div className="flex flex-1 items-center justify-center"><p className="text-ink-soft">Loading…</p></div>;
   }
 
   if (!canViewAnything) {
     return (
-      <main className="flex-1 px-6 py-10">
+      <div className="flex-1 px-6 py-10">
         <AccessDenied message="Your role does not include access to station configuration." />
-      </main>
+      </div>
     );
   }
 
   return (
-    <main className="flex-1">
+    <div className="flex-1">
       <header className="border-b border-border bg-surface px-6 py-4">
         <div className="mx-auto max-w-5xl">
           <h1 className="text-lg font-semibold text-ink">Station Configuration</h1>
@@ -65,7 +65,7 @@ export default function StationSettingsPage() {
         {can("station:update") && <ShiftTemplatesCard orgId={orgId} stationId={stationId} authFetch={authFetch} />}
         {can("station:update") && <StationTolerancesCard orgId={orgId} stationId={stationId} authFetch={authFetch} />}
       </div>
-    </main>
+    </div>
   );
 }
 

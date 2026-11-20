@@ -60,22 +60,22 @@ export default function PayrollPage() {
   const activeRule = useMemo(() => (rules ?? []).find((r) => r.is_active) ?? null, [rules]);
 
   if (permLoading) {
-    return <main className="flex-1 px-6 py-10 text-sm text-ink-soft">Loading…</main>;
+    return <div className="flex-1 px-6 py-10 text-sm text-ink-soft">Loading…</div>;
   }
 
   if (!canManage) {
     return (
-      <main className="flex-1">
+      <div className="flex-1">
         <PageHeader title="Payroll" breadcrumbs={[{ label: "Dashboard" }, { label: "Payroll" }]} />
         <div className="mx-auto max-w-3xl px-6 py-10">
           <AccessDenied message="Your role does not include payroll access at this station." />
         </div>
-      </main>
+      </div>
     );
   }
 
   return (
-    <main className="flex-1">
+    <div className="flex-1">
       <PageHeader
         title="Payroll"
         description="Salary generation, deduction rules, and payroll history for this station."
@@ -121,7 +121,7 @@ export default function PayrollPage() {
           />
         </TabPanel>
       </div>
-    </main>
+    </div>
   );
 }
 

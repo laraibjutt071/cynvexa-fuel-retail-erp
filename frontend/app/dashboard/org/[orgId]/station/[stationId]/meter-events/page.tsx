@@ -168,22 +168,22 @@ export default function MeterEventsPage() {
   ];
 
   if (permLoading) {
-    return <main className="flex-1 px-6 py-10 text-sm text-ink-soft">Loading…</main>;
+    return <div className="flex-1 px-6 py-10 text-sm text-ink-soft">Loading…</div>;
   }
 
   if (!can("shift:read")) {
     return (
-      <main className="flex-1">
+      <div className="flex-1">
         <PageHeader title="Meter Events" breadcrumbs={[{ label: "Dashboard" }, { label: "Meter Events" }]} />
         <div className="mx-auto max-w-3xl px-6 py-10">
           <AccessDenied message="Your role does not include visibility into this station's meter events." />
         </div>
-      </main>
+      </div>
     );
   }
 
   return (
-    <main className="flex-1">
+    <div className="flex-1">
       <PageHeader
         title="Meter Events"
         description="Every flagged meter rollover, reset and replacement for this station, across every shift."
@@ -305,7 +305,7 @@ export default function MeterEventsPage() {
         confirmLabel="Yes, approve"
         confirmVariant="primary"
       />
-    </main>
+    </div>
   );
 }
 

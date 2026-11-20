@@ -104,7 +104,7 @@ export default function StationsPage() {
   ];
 
   return (
-    <main className="flex-1">
+    <div className="flex-1">
       <PageHeader title="Stations" breadcrumbs={[{ label: "Users & Settings", href: `/dashboard/org/${orgId}/settings` }, { label: "Stations" }]} />
       <div className="mx-auto max-w-5xl space-y-6 px-6 py-8">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -150,6 +150,6 @@ export default function StationsPage() {
           </div>
         </form>
       </Dialog>
-    </main>
+    </div>
   );
 }

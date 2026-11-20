@@ -65,22 +65,22 @@ export default function CompanyOverviewPage() {
   const [{ dateFrom, dateTo }, setRange] = useState(defaultDateRange());
 
   if (permLoading) {
-    return <main className="flex-1 px-6 py-10 text-sm text-ink-soft">Loading…</main>;
+    return <div className="flex-1 px-6 py-10 text-sm text-ink-soft">Loading…</div>;
   }
 
   if (!can("report:read")) {
     return (
-      <main className="flex-1">
+      <div className="flex-1">
         <PageHeader title="Company Overview" breadcrumbs={[{ label: "Dashboard" }, { label: "Company Overview" }]} />
         <div className="mx-auto max-w-3xl px-6 py-10">
           <AccessDenied message="Your role does not include organization-wide report visibility." />
         </div>
-      </main>
+      </div>
     );
   }
 
   return (
-    <main className="flex-1">
+    <div className="flex-1">
       <PageHeader
         title="Company Overview"
         description="Combined figures across every station you're authorized to see."
@@ -94,7 +94,7 @@ export default function CompanyOverviewPage() {
         {activeTab === "attendance" && <AttendanceTab orgId={orgId} authFetch={authFetch} dateFrom={dateFrom} dateTo={dateTo} />}
         {activeTab === "comparison" && <ComparisonTab orgId={orgId} authFetch={authFetch} dateFrom={dateFrom} dateTo={dateTo} />}
       </div>
-    </main>
+    </div>
   );
 }
 

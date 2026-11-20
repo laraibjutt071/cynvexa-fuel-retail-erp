@@ -30,22 +30,22 @@ export default function AttendancePage() {
 
   if (loading || !user || permissionsLoading) {
     return (
-      <main className="flex flex-1 items-center justify-center">
+      <div className="flex flex-1 items-center justify-center">
         <p className="text-ink-soft">Loading...</p>
-      </main>
+      </div>
     );
   }
 
   if (!canRead) {
     return (
-      <main className="flex-1 px-6 py-10">
+      <div className="flex-1 px-6 py-10">
         <AccessDenied message="Your role does not include access to attendance records at this station." />
-      </main>
+      </div>
     );
   }
 
   return (
-    <main className="flex-1">
+    <div className="flex-1">
       <header className="border-b border-border bg-surface px-6 py-4">
         <div className="mx-auto max-w-5xl">
           <Link
@@ -65,7 +65,7 @@ export default function AttendancePage() {
       <div className="mx-auto max-w-5xl space-y-6 px-6 py-8">
         <AttendanceSection orgId={orgId} stationId={stationId} authFetch={authFetch} canRecord={canRecord} />
       </div>
-    </main>
+    </div>
   );
 }
 
