@@ -77,6 +77,27 @@ export function ReviewSection({
     load();
   }, [load]);
 
+  const [approvingMeterEvent, setApprovingMeterEvent] = useState<string | null>(null);
+
+  async function approveMeterEvent(readingId: string) {
+    setApprovingMeterEvent(readingId);
+    try {
+      const resp = await authFetch(`${shiftBase}/nozzle-readings/${readingId}/approve-meter-event`, {
+        method: "PATCH",
+        body: JSON.stringify({}),
+      });
+      if (!resp.ok) {
+        const body = await resp.json().catch(() => ({ detail: "Could not approve this meter event." }));
+        notify("error", body.detail ?? "Could not approve this meter event.");
+        return;
+      }
+      notify("success", "Meter event approved.");
+      await load();
+    } finally {
+      setApprovingMeterEvent(null);
+    }
+  }
+
   const unclosedNozzles = nozzleReadings.filter((r) => !r.closing_totalizer);
   const unapprovedMeterEvents = nozzleReadings.filter((r) => r.meter_event_type && !r.meter_event_approved_by_user_id);
   const unapprovedMovements = cashMovements.filter(
@@ -143,6 +164,43 @@ export function ReviewSection({
           ))}
         </ul>
       </Card>
+
+      {unapprovedMeterEvents.length > 0 && (
+        <Card
+          title="Meter events awaiting approval"
+          description="A nozzle was closed with a reset, replacement or rollover flagged. Each one needs approval before today's entry can be approved."
+        >
+          <ul className="space-y-2">
+            {unapprovedMeterEvents.map((r) => (
+              <li
+                key={r.id}
+                className="flex flex-col gap-2 rounded-lg border border-caution-200 bg-caution-50 p-3 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div className="text-sm">
+                  <span className="font-medium capitalize text-ink">{r.meter_event_type}</span>
+                  <span className="text-ink-soft">
+                    {" "}
+                    — pre {r.meter_event_pre_reading ?? "—"} → post {r.meter_event_post_reading ?? "—"}
+                  </span>
+                  {r.meter_event_notes && <p className="mt-0.5 text-xs text-ink-soft">{r.meter_event_notes}</p>}
+                </div>
+                {canApprove ? (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    busy={approvingMeterEvent === r.id}
+                    onClick={() => approveMeterEvent(r.id)}
+                  >
+                    Approve event
+                  </Button>
+                ) : (
+                  <span className="text-xs text-ink-faint">Needs a Station Manager or Shift Supervisor</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
 
       <Card title="Summary — what you're about to approve" description="Real figures from today's entry, not estimates. Review these before approving.">
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">

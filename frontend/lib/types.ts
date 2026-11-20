@@ -565,6 +565,33 @@ export interface Nozzle {
   updated_at: string;
 }
 
+export type MeterEventType = "replacement" | "reset" | "rollover";
+
+export interface MeterEventRow {
+  nozzle_reading_id: string;
+  shift_id: string;
+  shift_label: string | null;
+  shift_opened_at: string;
+  shift_status: string;
+  station_id: string;
+  nozzle_id: string;
+  nozzle_code: string;
+  dispenser_code: string;
+  tank_code: string;
+  fuel_grade_name: string;
+  event_type: string;
+  opening_totalizer: string;
+  meter_event_pre_reading: string;
+  meter_event_post_reading: string;
+  closing_totalizer: string;
+  dispensed_litres: string | null;
+  notes: string | null;
+  recorded_by_user_id: string | null;
+  recorded_at: string | null;
+  approved_by_user_id: string | null;
+  approved_at: string | null;
+}
+
 export interface NozzleOverview {
   nozzle_id: string;
   nozzle_code: string;

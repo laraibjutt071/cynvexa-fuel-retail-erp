@@ -21,6 +21,7 @@ from app.api import (
     invitations,
     inventory_items,
     inventory_movements,
+    meter_events,
     nozzle_overview,
     nozzles,
     org_reports,
@@ -151,6 +152,7 @@ def create_app() -> FastAPI:
     app.include_router(tanker_receipts.router)
     app.include_router(shifts.router)
     app.include_router(reading_corrections.router)
+    app.include_router(meter_events.router)
     app.include_router(payment_methods.router)
     app.include_router(credit_collections.balances_router)
     app.include_router(credit_customers.router)

@@ -93,6 +93,22 @@ Deliberately not built this pass - triaged, not missed:
 
 **New, narrow limitation introduced**: the persistent station switcher is a plain `<select>`, with no search/typeahead - fine for the station counts this app has been built and tested against, but would become unwieldy for an organization with dozens of stations. Not fixed this phase - a UI refinement, not a correctness or security gap.
 
+## Phase 9 — Complete ERP functionality gap audit (2026-11-20)
+
+Read-only audit, no code or database changed. Full results in `docs/PHASE_9_COMPLETE_ERP_GAP_AUDIT.md`; one new documented risk from it:
+
+**Unverifiable backup/restore test claim**: `docs/PHASE_7_FREE_HOSTING_LIMITATIONS.md` states a manual backup was "tested by restoring it to a separate scratch database" and cites `docs/PHASE_7_BACKUP_RESTORE_REPORT.md` as the source of that claim - that file does not exist anywhere in `docs/` (confirmed against a full listing of every file there). Either the report was never written or was lost after the claim was made. Not fixed this phase (audit-only, no implementation) - the claim should either be re-verified and a real report produced, or the wording in `PHASE_7_FREE_HOSTING_LIMITATIONS.md` corrected to stop citing a document that isn't there. Until then, treat "the backup has been restore-tested" as unconfirmed, not false - the backup *procedure* itself is still correctly documented in `docs/DEPLOYMENT.md`.
+
+Everything else the audit found (inter-station fuel transfer missing, leave/overtime missing, no custom-role editor, several backend-complete features with no frontend) is a **missing feature**, not a new risk in something already built - tracked in the audit report's own priority list, not duplicated here.
+
+## Phase 10a — Meter Event Management UI (2026-11-20)
+
+**Closed**: Phase 9's audit found that meter-event (replacement/reset/rollover) backend support existed with no usable frontend at all — `ReadingsSection.tsx` showed only a passive warning with no form, and the Review tab had no approve action. Both are now built, reusing the existing `close_nozzle_reading`/`approve_meter_event` endpoints with no new write path; the only new backend capability is a read-only cross-shift history endpoint (`GET /organizations/{id}/stations/{id}/meter-events`, no migration). Full detail in `docs/PHASE_10A_METER_EVENT_UI_REPORT.md`.
+
+**Verified, not just assumed, not to have introduced a new correction deadline**: a dedicated backend test sets a flagged event's timestamps 30 days in the past and confirms it still appears in history - the existing 24-hour Reading Corrections / amendment mechanism remains the only path for correcting an already-recorded event value; this phase added no competing one.
+
+**New, narrow limitation introduced**: no i18n/Roman Urdu translation was added for the new Meter Events page or the new Readings/Review strings - consistent with the already-documented gap above (Phase 7 UX-upgrade pass) of several operational pages not yet being translated.
+
 ## Pilot Day 2 — Reading Corrections, Credit Customer Enhancement (2026-11-14)
 
 ### New risks introduced

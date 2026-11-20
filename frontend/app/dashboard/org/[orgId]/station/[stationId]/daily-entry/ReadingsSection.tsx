@@ -7,7 +7,7 @@ import { useLanguage } from "@/lib/i18n/context";
 import { useToast } from "@/components/ui/Toast";
 import { Card } from "@/components/Card";
 import { Button } from "@/components/ui/Button";
-import { TextInput } from "@/components/ui/Field";
+import { Select, TextInput } from "@/components/ui/Field";
 import { ConfirmDialog } from "@/components/ui/Dialog";
 import { usePermissions } from "@/lib/permissions";
 import type { NozzleOverview, Shift, ShiftNozzleReading, ShiftTankReading, Tank } from "@/lib/types";
@@ -41,6 +41,12 @@ export function ReadingsSection({
   const [tankDipInputs, setTankDipInputs] = useState<Record<string, string>>({});
   const [nozzleInputs, setNozzleInputs] = useState<Record<string, string>>({});
   const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [meterEventOpen, setMeterEventOpen] = useState<Record<string, boolean>>({});
+  const [meterEventType, setMeterEventType] = useState<Record<string, string>>({});
+  const [meterEventPre, setMeterEventPre] = useState<Record<string, string>>({});
+  const [meterEventPost, setMeterEventPost] = useState<Record<string, string>>({});
+  const [meterEventNotes, setMeterEventNotes] = useState<Record<string, string>>({});
+  const [confirmMeterEvent, setConfirmMeterEvent] = useState<{ readingId: string; nozzleId: string } | null>(null);
 
   useEffect(() => {
     const hasUnsaved =
@@ -117,19 +123,44 @@ export function ReadingsSection({
   async function recordNozzleClosing(readingId: string, nozzleId: string) {
     const value = nozzleInputs[`${nozzleId}:close`];
     if (!value) return;
+    // A flagged meter event is sensitive and not silently reversible (the
+    // original closing/pre/post readings are never overwritten after
+    // this - only the existing Reading Corrections workflow can correct
+    // them) - require an explicit confirmation step before submitting one,
+    // same as closing the whole day's readings already does.
+    if (meterEventOpen[nozzleId]) {
+      setConfirmMeterEvent({ readingId, nozzleId });
+      return;
+    }
+    await submitNozzleClosing(readingId, nozzleId, value);
+  }
+
+  async function submitNozzleClosing(readingId: string, nozzleId: string, value: string) {
     setBusyKey(`nozzle:${nozzleId}:close`);
     try {
+      const flagged = meterEventOpen[nozzleId];
+      const payload: Record<string, unknown> = { closing_totalizer: value };
+      if (flagged) {
+        payload.meter_event_type = meterEventType[nozzleId] || "replacement";
+        payload.meter_event_pre_reading = meterEventPre[nozzleId];
+        payload.meter_event_post_reading = meterEventPost[nozzleId];
+        payload.meter_event_notes = meterEventNotes[nozzleId] || undefined;
+      }
       const resp = await authFetch(`${shiftBase}/nozzle-readings/${readingId}/close`, {
         method: "PATCH",
-        body: JSON.stringify({ closing_totalizer: value }),
+        body: JSON.stringify(payload),
       });
       if (!resp.ok) {
-        const body = await resp.json().catch(() => ({ detail: "Could not save the closing reading. If the meter was replaced or rolled over, this needs a meter-event correction instead of a plain closing reading." }));
+        const body = await resp.json().catch(() => ({ detail: "Could not save the closing reading. If the meter was replaced or rolled over, flag a meter event instead of a plain closing reading." }));
         notify("error", body.detail ?? "Could not save the closing reading.");
         return;
       }
-      notify("success", "Closing reading saved - litres sold calculated automatically.");
+      notify(
+        "success",
+        flagged ? "Meter event recorded - it will need approval before this shift can be approved." : "Closing reading saved - litres sold calculated automatically."
+      );
       setNozzleInputs((prev) => { const next = { ...prev }; delete next[`${nozzleId}:close`]; return next; });
+      setMeterEventOpen((prev) => ({ ...prev, [nozzleId]: false }));
       await load();
     } finally {
       setBusyKey(null);
@@ -343,12 +374,72 @@ export function ReadingsSection({
                       )}
                     </div>
                   </div>
-                  {reading && !reading.closing_totalizer && Number(nozzleInputs[`${n.nozzle_id}:close`] ?? "1") < Number(reading.opening_totalizer) && nozzleInputs[`${n.nozzle_id}:close`] && (
-                    <p className="mt-2 flex items-center gap-1.5 text-xs font-medium text-caution-600">
-                      <AlertTriangle className="h-3.5 w-3.5" aria-hidden />
-                      This reading is lower than the opening reading. If the meter was reset or replaced, use the
-                      meter-event correction (ask a manager) instead of saving this as-is.
-                    </p>
+                  {reading && !reading.closing_totalizer && !readOnly && canClose && (
+                    <div className="mt-3 border-t border-border pt-3">
+                      {Number(nozzleInputs[`${n.nozzle_id}:close`] ?? "1") < Number(reading.opening_totalizer) &&
+                        nozzleInputs[`${n.nozzle_id}:close`] &&
+                        !meterEventOpen[n.nozzle_id] && (
+                          <p className="mb-2 flex items-center gap-1.5 text-xs font-medium text-caution-600">
+                            <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0" aria-hidden />
+                            This reading is lower than the opening reading. If the meter was reset, replaced, or rolled
+                            over, flag a meter event below instead of saving this as-is.
+                          </p>
+                        )}
+                      <label className="flex items-center gap-2 text-xs font-medium text-ink-soft">
+                        <input
+                          type="checkbox"
+                          checked={meterEventOpen[n.nozzle_id] ?? false}
+                          onChange={(e) => setMeterEventOpen({ ...meterEventOpen, [n.nozzle_id]: e.target.checked })}
+                        />
+                        This meter was reset, replaced, or rolled over mid-shift
+                      </label>
+                      {meterEventOpen[n.nozzle_id] && (
+                        <div className="mt-2 grid grid-cols-1 gap-2 rounded-lg border border-caution-100 bg-caution-50/50 p-3 sm:grid-cols-2">
+                          <Select
+                            aria-label="Meter event type"
+                            value={meterEventType[n.nozzle_id] ?? "replacement"}
+                            onChange={(e) => setMeterEventType({ ...meterEventType, [n.nozzle_id]: e.target.value })}
+                          >
+                            <option value="replacement">Replacement</option>
+                            <option value="reset">Reset</option>
+                            <option value="rollover">Rollover</option>
+                          </Select>
+                          <div />
+                          <TextInput
+                            type="number"
+                            step="0.001"
+                            min="0"
+                            required
+                            aria-label="Reading just before the event"
+                            placeholder="Pre-event reading *"
+                            value={meterEventPre[n.nozzle_id] ?? ""}
+                            onChange={(e) => setMeterEventPre({ ...meterEventPre, [n.nozzle_id]: e.target.value })}
+                          />
+                          <TextInput
+                            type="number"
+                            step="0.001"
+                            min="0"
+                            required
+                            aria-label="Reading just after the event (0 for a rollover/reset)"
+                            placeholder="Post-event reading *"
+                            value={meterEventPost[n.nozzle_id] ?? ""}
+                            onChange={(e) => setMeterEventPost({ ...meterEventPost, [n.nozzle_id]: e.target.value })}
+                          />
+                          <TextInput
+                            aria-label="Notes about this meter event"
+                            placeholder="Notes (optional)"
+                            className="sm:col-span-2"
+                            value={meterEventNotes[n.nozzle_id] ?? ""}
+                            onChange={(e) => setMeterEventNotes({ ...meterEventNotes, [n.nozzle_id]: e.target.value })}
+                          />
+                          <p className="text-xs text-ink-faint sm:col-span-2">
+                            Dispensed litres = (pre-event − opening) + (closing − post-event). Both segments must be
+                            zero or more. This still needs approval from a Station Manager or Shift Supervisor before
+                            the shift can be approved.
+                          </p>
+                        </div>
+                      )}
+                    </div>
                   )}
                 </div>
               );
@@ -390,6 +481,23 @@ export function ReadingsSection({
         confirmLabel="Yes, close readings"
         confirmVariant="primary"
         busy={busyKey === "close-shift"}
+      />
+
+      <ConfirmDialog
+        open={confirmMeterEvent !== null}
+        onClose={() => setConfirmMeterEvent(null)}
+        onConfirm={async () => {
+          if (!confirmMeterEvent) return;
+          const { readingId, nozzleId } = confirmMeterEvent;
+          const value = nozzleInputs[`${nozzleId}:close`];
+          setConfirmMeterEvent(null);
+          await submitNozzleClosing(readingId, nozzleId, value);
+        }}
+        title="Flag this meter event?"
+        description="This records that the nozzle's totalizer was reset, replaced, or rolled over mid-shift - the original closing reading and event values are permanent once saved (a Reading Correction is the only way to fix them afterward). A Station Manager or Shift Supervisor will still need to approve this event before the shift can be approved."
+        confirmLabel="Yes, flag this meter event"
+        confirmVariant="primary"
+        busy={busyKey !== null && busyKey.endsWith(":close")}
       />
     </div>
   );
