@@ -10,6 +10,7 @@ import {
   CreditCard,
   Fuel,
   Gauge,
+  History,
   Languages,
   LayoutDashboard,
   Layers,
@@ -85,6 +86,13 @@ function buildNav(orgId: string, stationId: string | null): NavItem[] {
       href: `/dashboard/org/${orgId}/station/${station}/daily-entry?section=readings`,
       icon: Gauge,
       anyPermission: ["shift:open", "shift:close"],
+      needsStation: true,
+    },
+    {
+      labelKey: "nav.meterEvents",
+      href: `/dashboard/org/${orgId}/station/${station}/meter-events`,
+      icon: History,
+      anyPermission: ["shift:read"],
       needsStation: true,
     },
     {

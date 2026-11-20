@@ -144,4 +144,66 @@ test.describe("Phase 8c — Company Overview, station switcher, comparison", () 
 
     await expect(page.getByText("Access restricted")).toBeVisible();
   });
+
+  test("the live daily sales trend, last-updated timestamp, and manual refresh all reflect real data", async ({
+    page,
+    request,
+  }) => {
+    await loginAs(page, state.ownerEmail, state.ownerPassword);
+    await page.goto(`/dashboard/org/${state.orgId}/overview`);
+
+    // The chart itself - real data from GET .../reports/daily-sales, not a
+    // frontend calculation. Station 1's seeded shift (500L @ 280.00/L)
+    // gives today's bar a non-zero value, so this isn't the chart's own
+    // "no approved sales yet" empty state.
+    await expect(page.getByRole("heading", { name: "Daily sales trend" })).toBeVisible();
+    await expect(page.getByText("No approved sales in this range yet.")).toHaveCount(0);
+
+    // Last-updated timestamp appears once the first load completes.
+    await expect(page.getByText(/Last updated \d/)).toBeVisible();
+
+    // Manual refresh: record a new expense via the real API, click
+    // Refresh, and confirm the Expense categories card's total actually
+    // changes - proving the button re-fetches live backend data, not
+    // just toggling a spinner.
+    const token = await (
+      await request.post("http://localhost:8000/auth/login", {
+        data: { email: state.ownerEmail, password: state.ownerPassword },
+      })
+    ).json();
+    const auth = { Authorization: `Bearer ${token.access_token}` };
+    const today = new Date().toISOString().slice(0, 10);
+    await request.post(`http://localhost:8000/organizations/${state.orgId}/expenses`, {
+      headers: auth,
+      data: { category: "e2e-live-refresh", description: "Live refresh probe", amount: "777", expense_date: today },
+    });
+
+    await page.getByRole("button", { name: "Refresh now" }).click();
+    await expect(page.getByText("e2e-live-refresh")).toBeVisible();
+    await expect(page.getByText(/777\.00 total/)).toBeVisible();
+  });
+
+  test("Supplier outstanding balance and Pending approvals sections reflect real data for an authorized Owner", async ({
+    page,
+  }) => {
+    await loginAs(page, state.ownerEmail, state.ownerPassword);
+    await page.goto(`/dashboard/org/${state.orgId}/overview`);
+
+    await expect(page.getByText("Supplier outstanding balance")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Pending approvals & attention centre" })).toBeVisible();
+  });
+
+  test("Recent activity shows real, humanized actions for an authorized Owner", async ({ page }) => {
+    // Every seeded role that holds report:read (Owner, Station Manager,
+    // Accountant, Auditor/Viewer) also holds audit:read in this project's
+    // current seed, so there's no real role to exercise an "activity
+    // section omitted" negative case against - the section's own gate
+    // (can("audit:read")) is still real and backend-enforced regardless;
+    // this test only confirms the positive, always-reachable path renders
+    // real data, not a placeholder.
+    await loginAs(page, state.ownerEmail, state.ownerPassword);
+    await page.goto(`/dashboard/org/${state.orgId}/overview`);
+    await expect(page.getByRole("heading", { name: "Recent activity" })).toBeVisible();
+    await expect(page.getByText("No recent activity recorded yet.")).toHaveCount(0);
+  });
 });

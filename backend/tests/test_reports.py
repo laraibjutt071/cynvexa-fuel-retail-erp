@@ -3,7 +3,13 @@ from decimal import Decimal
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.organization import Organization
+from app.models.shift import Shift
+from app.models.shift_nozzle_reading import ShiftNozzleReading
+from app.models.station import Station
+from app.models.user import User
 from tests.conftest import auth_headers, login
 
 pytestmark = pytest.mark.asyncio
@@ -197,6 +203,55 @@ async def test_pending_approvals_reflects_low_stock_item(
     )
     resp = await client.get(f"/organizations/{org.id}/reports/pending-approvals", headers=auth_headers(token))
     assert resp.json()["low_stock_inventory_items"] == 1
+
+
+async def test_pending_approvals_unapproved_meter_events_is_scoped_to_the_caller_organization(
+    client: AsyncClient, db: AsyncSession, owner_user: User, org: Organization, station: Station, nozzle
+):
+    """
+    Regression test: unapproved_meter_events previously had no
+    organization_id/station filter at all, so one org's dashboard counted
+    every unapproved meter event across every organization in the
+    database - a real cross-tenant isolation leak, found during the
+    Client Owner Dashboard audit. Reproduces it directly via the model
+    (not the API) so this test fails against the old unfiltered query
+    regardless of any API-level validation that might otherwise prevent
+    constructing this exact cross-org row.
+    """
+    token = await login(client, "owner@acmefuel-dev.com")
+    before = await client.get(f"/organizations/{org.id}/reports/pending-approvals", headers=auth_headers(token))
+    assert before.json()["unapproved_meter_events"] == 0
+
+    other_org = Organization(name="Other Fuel Co - Meter Leak Test")
+    db.add(other_org)
+    await db.flush()
+    other_station = Station(organization_id=other_org.id, name="Other Station", code="OTH-METER-LEAK")
+    db.add(other_station)
+    await db.flush()
+    other_shift = Shift(
+        organization_id=other_org.id,
+        station_id=other_station.id,
+        opened_by_user_id=owner_user.id,
+    )
+    db.add(other_shift)
+    await db.flush()
+    db.add(
+        ShiftNozzleReading(
+            shift_id=other_shift.id,
+            nozzle_id=nozzle.id,
+            opening_totalizer="0",
+            opening_recorded_by_user_id=owner_user.id,
+            closing_totalizer="100",
+            meter_event_type="rollover",
+            meter_event_pre_reading="99999",
+            meter_event_post_reading="0",
+        )
+    )
+    await db.commit()
+
+    after = await client.get(f"/organizations/{org.id}/reports/pending-approvals", headers=auth_headers(token))
+    assert after.status_code == 200, after.text
+    assert after.json()["unapproved_meter_events"] == 0
 
 
 async def test_cashier_cannot_read_reports(client: AsyncClient, cashier_user, org, station):

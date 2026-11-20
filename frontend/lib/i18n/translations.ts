@@ -19,6 +19,7 @@ export const translations = {
   "nav.dailyEntry": { en: "Daily Entry", ur: "Aaj ka Kaam" },
   "nav.fuelStock": { en: "Fuel Stock", ur: "Fuel Stock" },
   "nav.pumpReadings": { en: "Pump Readings", ur: "Meter Reading" },
+  "nav.meterEvents": { en: "Meter Events", ur: "Meter Events" },
   "nav.salesCollections": { en: "Sales & Collections", ur: "Sale aur Wasooli" },
   "nav.expenses": { en: "Expenses", ur: "Kharche" },
   "nav.cashBank": { en: "Cash & Bank", ur: "Cash aur Bank" },

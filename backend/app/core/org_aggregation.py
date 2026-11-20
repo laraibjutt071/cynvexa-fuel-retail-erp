@@ -99,6 +99,47 @@ async def sales_by_grade_and_station(
     return by_grade, by_station
 
 
+async def sales_by_day(db: AsyncSession, shifts: list[Shift]) -> dict[date, dict[str, Decimal]]:
+    """
+    Returns {date: {"litres": Decimal, "revenue": Decimal}}, bucketed by
+    each shift's own opened_at date - using the identical two sources as
+    sales_by_grade_and_station above (per-shift expected revenue via
+    compute_expected_fuel_revenue_by_grade, litres via the stock ledger's
+    own SALE postings), just grouped by day instead of by grade/station.
+    A day with no shift simply has no key here; callers fill the gap with
+    zero when building a display series, so a client-facing trend never
+    silently skips a day.
+    """
+    by_day: dict[date, dict[str, Decimal]] = {}
+    if not shifts:
+        return by_day
+
+    shift_by_id = {s.id: s for s in shifts}
+    shift_day = {s.id: s.opened_at.date() for s in shifts}
+
+    for shift in shifts:
+        per_grade_revenue = await compute_expected_fuel_revenue_by_grade(db, shift)
+        bucket = by_day.setdefault(shift_day[shift.id], {"litres": Decimal(0), "revenue": Decimal(0)})
+        bucket["revenue"] += sum(per_grade_revenue.values(), Decimal(0))
+
+    ledger_rows = (
+        await db.execute(
+            select(StockLedgerEntry.reference_id, StockLedgerEntry.quantity).where(
+                StockLedgerEntry.reference_type == "Shift",
+                StockLedgerEntry.reference_id.in_(list(shift_by_id.keys())),
+                StockLedgerEntry.movement_type == StockMovementType.SALE.value,
+            )
+        )
+    ).all()
+    for shift_id, quantity in ledger_rows:
+        if shift_id not in shift_by_id:
+            continue
+        bucket = by_day.setdefault(shift_day[shift_id], {"litres": Decimal(0), "revenue": Decimal(0)})
+        bucket["litres"] += quantity
+
+    return by_day
+
+
 async def tender_totals_by_category_and_station(
     db: AsyncSession, shifts: list[Shift]
 ) -> tuple[dict[str, Decimal], dict[uuid.UUID, dict[str, Decimal]]]:

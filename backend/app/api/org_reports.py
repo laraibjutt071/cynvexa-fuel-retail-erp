@@ -11,7 +11,7 @@ filter only ever narrows an already-authorized set, never widens it.
 """
 
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Query
@@ -25,6 +25,7 @@ from app.core.org_aggregation import (
     approved_shifts_in_range,
     current_tank_stock,
     fuel_grade_names,
+    sales_by_day,
     sales_by_grade_and_station,
     station_names,
     tender_totals_by_category_and_station,
@@ -39,6 +40,8 @@ from app.schemas.org_reports import (
     OrgAttendanceDay,
     OrgAttendanceReport,
     OrgAttendanceStationRow,
+    OrgDailySalesDay,
+    OrgDailySalesReport,
     OrgExpenseReport,
     OrgExpenseStationRow,
     OrgRevenueReport,
@@ -121,6 +124,43 @@ async def org_sales_report(
         by_fuel_grade=grade_rows,
         by_station=station_rows,
     )
+
+
+@router.get("/daily-sales", response_model=OrgDailySalesReport)
+async def org_daily_sales_report(
+    organization_id: uuid.UUID,
+    date_from: date = Query(...),
+    date_to: date = Query(...),
+    station_id: list[uuid.UUID] | None = Query(default=None),
+    current_user: User = Depends(require_permission(REPORT_READ)),
+    db: AsyncSession = Depends(get_db),
+) -> OrgDailySalesReport:
+    """One data point per calendar day in range - the daily sales trend a
+    dashboard chart needs, which none of the other org-wide reports
+    provide (they each return one total for the whole range). Reuses
+    approved_shifts_in_range + sales_by_day, the same expected-revenue and
+    ledger-litres sources every sibling report already uses, just grouped
+    by day. Every day in [date_from, date_to] is returned, zero-filled if
+    it had no approved shift - never silently skipped."""
+    _validate_date_range(date_from, date_to)
+    station_ids = await _authorized_stations(
+        db, organization_id=organization_id, current_user=current_user, permission_code=REPORT_READ, station_id=station_id
+    )
+    shifts = await approved_shifts_in_range(db, station_ids, date_from, date_to)
+    by_day = await sales_by_day(db, shifts)
+
+    days: list[OrgDailySalesDay] = []
+    current_day = date_from
+    while current_day <= date_to:
+        totals = by_day.get(current_day, {"litres": Decimal(0), "revenue": Decimal(0)})
+        days.append(
+            OrgDailySalesDay(
+                sales_date=current_day, litres_sold=totals["litres"], expected_revenue=totals["revenue"]
+            )
+        )
+        current_day += timedelta(days=1)
+
+    return OrgDailySalesReport(date_from=date_from, date_to=date_to, days=days)
 
 
 @router.get("/revenue", response_model=OrgRevenueReport)

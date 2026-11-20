@@ -1,28 +1,50 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
-import { Banknote, Fuel, Receipt, UserCheck, Users, Wallet } from "lucide-react";
+import Link from "next/link";
+import {
+  Activity,
+  AlertCircle,
+  Banknote,
+  Bell,
+  Clock,
+  Fuel,
+  Receipt,
+  RefreshCw,
+  UserCheck,
+  Users,
+  Wallet,
+} from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { usePermissions } from "@/lib/permissions";
 import { formatLitres, formatMoney, formatNumber } from "@/lib/format";
 import { DateRangeFilter, defaultDateRange } from "@/components/DateRangeFilter";
 import { Card } from "@/components/Card";
+import { Button } from "@/components/ui/Button";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Tabs } from "@/components/ui/Tabs";
 import { StatCard, StatCardGrid } from "@/components/ui/StatCard";
 import { DataTable, type Column } from "@/components/ui/DataTable";
 import { AccessDenied } from "@/components/ui/AccessDenied";
 import { StationBarChart } from "@/components/charts/StationBarChart";
+import { DailySalesTrendChart } from "@/components/charts/DailySalesTrendChart";
 import type {
+  AuditLogEntry,
   OrgAttendanceReport,
+  OrgDailySalesReport,
   OrgExpenseReport,
   OrgRevenueReport,
   OrgSalesReport,
   OrgStationPerformanceReport,
   OrgStockReport,
+  OrgUser,
+  PendingApprovalsReport,
   StationPerformanceRow,
+  SupplierBalance,
 } from "@/lib/types";
+
+const AUTO_REFRESH_INTERVAL_MS = 60_000;
 
 type Tab = "overview" | "stock" | "attendance" | "comparison";
 
@@ -76,6 +98,15 @@ export default function CompanyOverviewPage() {
   );
 }
 
+interface OverviewData {
+  sales: OrgSalesReport;
+  revenue: OrgRevenueReport;
+  expenses: OrgExpenseReport;
+  dailySales: OrgDailySalesReport;
+  supplierBalances: SupplierBalance[] | null;
+  pendingApprovals: PendingApprovalsReport | null;
+}
+
 function OverviewTab({
   orgId,
   authFetch,
@@ -87,52 +118,109 @@ function OverviewTab({
   dateFrom: string;
   dateTo: string;
 }) {
-  const [sales, setSales] = useState<OrgSalesReport | null>(null);
-  const [revenue, setRevenue] = useState<OrgRevenueReport | null>(null);
-  const [expenses, setExpenses] = useState<OrgExpenseReport | null>(null);
+  const { can } = usePermissions(orgId);
+  const canReadSuppliers = can("supplier_ledger:read");
+  const canReadAudit = can("audit:read");
+
+  const [data, setData] = useState<OverviewData | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+
+  // Prevents two overlapping fetch cycles (a manual click landing mid-way
+  // through the 60s auto-refresh) within one date-range "generation", and
+  // - critically - lets a date-range change invalidate any request still
+  // in flight from the PREVIOUS generation, so its late response can never
+  // overwrite newer data. A single shared boolean isn't enough for this:
+  // if a background refresh is in flight exactly when dateFrom/dateTo
+  // changes, resetting that boolean for the new generation would let the
+  // stale request's own completion still win a race to write state. Each
+  // request instead captures and checks its own generation number.
+  const inFlightRef = useRef(false);
+  const generationRef = useRef(0);
+
+  const load = useCallback(
+    async (isInitial: boolean) => {
+      if (inFlightRef.current) return;
+      inFlightRef.current = true;
+      const myGeneration = generationRef.current;
+      if (isInitial) {
+        setError(null);
+        setData(null);
+      } else {
+        setRefreshing(true);
+      }
+      try {
+        const qs = `?date_from=${dateFrom}&date_to=${dateTo}`;
+        const requests: Promise<Response>[] = [
+          authFetch(`/organizations/${orgId}/reports/sales${qs}`),
+          authFetch(`/organizations/${orgId}/reports/revenue${qs}`),
+          authFetch(`/organizations/${orgId}/reports/expenses${qs}`),
+          authFetch(`/organizations/${orgId}/reports/daily-sales${qs}`),
+        ];
+        const [salesResp, revenueResp, expensesResp, dailySalesResp] = await Promise.all(requests);
+        if (generationRef.current !== myGeneration) return;
+        if (!salesResp.ok || !revenueResp.ok || !expensesResp.ok || !dailySalesResp.ok) {
+          const message = "Could not load the company overview for this date range.";
+          if (isInitial) setError(message);
+          else setRefreshError(message);
+          return;
+        }
+        const [sales, revenue, expenses, dailySales] = await Promise.all([
+          salesResp.json(),
+          revenueResp.json(),
+          expensesResp.json(),
+          dailySalesResp.json(),
+        ]);
+        if (generationRef.current !== myGeneration) return;
+
+        // Supplier balances and pending approvals are optional extras -
+        // their own permission may not be held by every role that can see
+        // the rest of this dashboard, so a missing grant degrades to
+        // "section omitted", never a hard error for the whole page.
+        const [supplierResp, pendingResp] = await Promise.all([
+          canReadSuppliers ? authFetch(`/organizations/${orgId}/suppliers/balances`) : Promise.resolve(null),
+          authFetch(`/organizations/${orgId}/reports/pending-approvals`),
+        ]);
+        if (generationRef.current !== myGeneration) return;
+        const supplierBalances = supplierResp && supplierResp.ok ? await supplierResp.json() : null;
+        const pendingApprovals = pendingResp.ok ? await pendingResp.json() : null;
+
+        setData({ sales, revenue, expenses, dailySales, supplierBalances, pendingApprovals });
+        setRefreshError(null);
+        setLastUpdated(new Date());
+      } finally {
+        inFlightRef.current = false;
+        setRefreshing(false);
+      }
+    },
+    [authFetch, orgId, dateFrom, dateTo, canReadSuppliers]
+  );
 
   useEffect(() => {
-    // A date-range change can fire this effect again before the previous
-    // run's requests have resolved (e.g. two quick edits to "From" and
-    // "To") - without this guard, an earlier, now-stale response (or its
-    // error, from a momentarily invalid intermediate range) could resolve
-    // after the latest one and overwrite its correct result.
-    let cancelled = false;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setSales(null);
-    setRevenue(null);
-    setExpenses(null);
-    setError(null);
-    (async () => {
-      const qs = `?date_from=${dateFrom}&date_to=${dateTo}`;
-      const [salesResp, revenueResp, expensesResp] = await Promise.all([
-        authFetch(`/organizations/${orgId}/reports/sales${qs}`),
-        authFetch(`/organizations/${orgId}/reports/revenue${qs}`),
-        authFetch(`/organizations/${orgId}/reports/expenses${qs}`),
-      ]);
-      if (cancelled) return;
-      if (!salesResp.ok || !revenueResp.ok || !expensesResp.ok) {
-        setError("Could not load the company overview for this date range.");
-        return;
-      }
-      const [salesBody, revenueBody, expensesBody] = await Promise.all([
-        salesResp.json(),
-        revenueResp.json(),
-        expensesResp.json(),
-      ]);
-      if (cancelled) return;
-      setSales(salesBody);
-      setRevenue(revenueBody);
-      setExpenses(expensesBody);
-    })();
+    // Starts a new generation - any request still in flight from the
+    // previous one will find this mismatched when it resolves and quietly
+    // discard its result instead of overwriting the new range's data.
+    // Safe to also reset inFlightRef here: a stale in-flight request no
+    // longer blocks the new generation's own load from starting, and that
+    // stale request's generation check above still stops it from ever
+    // writing state.
+    generationRef.current += 1;
+    inFlightRef.current = false;
+    load(true);
+    const interval = window.setInterval(() => load(false), AUTO_REFRESH_INTERVAL_MS);
     return () => {
-      cancelled = true;
+      generationRef.current += 1;
+      window.clearInterval(interval);
     };
-  }, [authFetch, orgId, dateFrom, dateTo]);
+    // Re-running on dateFrom/dateTo change intentionally restarts both the
+    // initial load and the refresh timer for the new range.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orgId, dateFrom, dateTo]);
 
   if (error) return <p className="text-sm text-danger-600">{error}</p>;
-  if (!sales || !revenue || !expenses) {
+  if (!data) {
     return (
       <StatCardGrid>
         {Array.from({ length: 4 }).map((_, i) => (
@@ -142,8 +230,34 @@ function OverviewTab({
     );
   }
 
+  const { sales, revenue, expenses, dailySales, supplierBalances, pendingApprovals } = data;
+  const totalSupplierOutstanding = supplierBalances
+    ? supplierBalances.reduce((sum, b) => sum + Number(b.balance), 0)
+    : null;
+
   return (
     <div className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-ink-faint">
+        <span className="flex items-center gap-1.5">
+          <Clock className="h-3.5 w-3.5" aria-hidden />
+          {lastUpdated
+            ? `Last updated ${lastUpdated.toLocaleTimeString()} - refreshes automatically every 60s`
+            : "Loading…"}
+          {refreshing && <span className="text-accent">Refreshing…</span>}
+        </span>
+        <Button size="sm" variant="secondary" onClick={() => load(false)} busy={refreshing}>
+          <RefreshCw className="h-3.5 w-3.5" aria-hidden />
+          Refresh now
+        </Button>
+      </div>
+
+      {refreshError && (
+        <p className="flex items-center gap-2 rounded-lg border border-caution-200 bg-caution-50 px-3 py-2 text-xs text-caution-700">
+          <AlertCircle className="h-3.5 w-3.5 flex-shrink-0" aria-hidden />
+          {refreshError} Showing the last successful figures below.
+        </p>
+      )}
+
       <StatCardGrid>
         <StatCard label="Total fuel sold" value={formatLitres(sales.total_litres_sold)} icon={Fuel} tone="brand" />
         <StatCard
@@ -161,7 +275,25 @@ function OverviewTab({
           subtitle={`of ${formatMoney(revenue.total_tender_amount)} total tendered`}
         />
         <StatCard label="Approved expenses" value={formatMoney(expenses.grand_approved)} icon={Receipt} tone="warning" />
+        {totalSupplierOutstanding !== null && (
+          <StatCard
+            label="Supplier outstanding balance"
+            value={`PKR ${formatMoney(totalSupplierOutstanding)}`}
+            icon={Wallet}
+            tone={totalSupplierOutstanding > 0 ? "danger" : "success"}
+            subtitle="Across every supplier, this organization"
+          />
+        )}
       </StatCardGrid>
+
+      <Card
+        title="Daily sales trend"
+        description="Expected revenue per day from approved shifts, across every authorized station - refreshes automatically with the rest of this page."
+      >
+        <DailySalesTrendChart days={dailySales.days} />
+      </Card>
+
+      {pendingApprovals && <PendingApprovalsCard orgId={orgId} report={pendingApprovals} />}
 
       <Card
         title="Revenue by payment method"
@@ -198,7 +330,131 @@ function OverviewTab({
           </ul>
         )}
       </Card>
+
+      {canReadAudit && <RecentActivityCard orgId={orgId} authFetch={authFetch} />}
     </div>
+  );
+}
+
+const PENDING_APPROVAL_ITEMS: {
+  key: keyof PendingApprovalsReport;
+  label: string;
+  linkLabel: string;
+}[] = [
+  { key: "shifts_awaiting_approval", label: "Shifts awaiting approval", linkLabel: "Review stations" },
+  { key: "tanker_receipts_awaiting_approval", label: "Fuel receipts awaiting approval", linkLabel: "Review stations" },
+  { key: "unapproved_meter_events", label: "Unapproved meter events", linkLabel: "Review stations" },
+  { key: "reconciliations_requiring_authorization", label: "Cash discrepancies needing authorization", linkLabel: "Review stations" },
+  { key: "unapproved_decreasing_cash_movements", label: "Cash movements awaiting approval", linkLabel: "Review stations" },
+  { key: "pending_expenses", label: "Pending expenses", linkLabel: "Go to Expenses" },
+  { key: "unapproved_supplier_payments", label: "Unapproved supplier payments", linkLabel: "Go to Suppliers" },
+  { key: "low_stock_inventory_items", label: "Low-stock inventory items", linkLabel: "Review stations" },
+];
+
+function PendingApprovalsCard({ orgId, report }: { orgId: string; report: PendingApprovalsReport }) {
+  const total = PENDING_APPROVAL_ITEMS.reduce((sum, item) => sum + report[item.key], 0);
+
+  const linkFor = (key: keyof PendingApprovalsReport) => {
+    if (key === "pending_expenses") return `/dashboard/org/${orgId}?tab=expenses`;
+    if (key === "unapproved_supplier_payments") return `/dashboard/org/${orgId}/suppliers`;
+    return `/dashboard/org/${orgId}/stations`;
+  };
+
+  return (
+    <Card
+      title="Pending approvals & attention centre"
+      description="Everything awaiting a decision across every station you're authorized to see. Counts only - open the linked workflow to act."
+      action={
+        <span className="flex items-center gap-1.5 text-xs font-medium text-ink-soft">
+          <Bell className="h-3.5 w-3.5" aria-hidden />
+          {total} total
+        </span>
+      }
+    >
+      {total === 0 ? (
+        <p className="text-sm text-ink-soft">Nothing is waiting on you right now.</p>
+      ) : (
+        <ul className="divide-y divide-border">
+          {PENDING_APPROVAL_ITEMS.filter((item) => report[item.key] > 0).map((item) => (
+            <li key={item.key} className="flex items-center justify-between py-2 text-sm">
+              <span className="text-ink">{item.label}</span>
+              <span className="flex items-center gap-3">
+                <span className="rounded-full bg-caution-50 px-2 py-0.5 text-xs font-semibold text-caution-700">
+                  {report[item.key]}
+                </span>
+                <Link href={linkFor(item.key)} className="text-xs font-medium text-accent hover:underline">
+                  {item.linkLabel}
+                </Link>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  );
+}
+
+const ACTIVITY_ACTION_LABELS: Record<string, string> = {
+  "shift.approve": "Shift approved",
+  "shift.close": "Shift closed",
+  "expense.approve": "Expense approved",
+  "expense.create": "Expense recorded",
+  "supplier_payment.approve": "Supplier payment approved",
+  "supplier_payment.create": "Supplier payment recorded",
+  "supplier_invoice.create": "Supplier invoice recorded",
+  "shift.nozzle_reading.approve_meter_event": "Meter event approved",
+  "shift.nozzle_reading.close": "Meter event flagged",
+  "salary.generate": "Salary generated",
+  "salary.finalize": "Salary finalized",
+  "tanker_receipt.approve": "Fuel receipt approved",
+};
+
+function humanizeAction(action: string): string {
+  return ACTIVITY_ACTION_LABELS[action] ?? action.replace(/[._]/g, " ");
+}
+
+function RecentActivityCard({ orgId, authFetch }: { orgId: string; authFetch: AuthFetch }) {
+  const [entries, setEntries] = useState<AuditLogEntry[] | null>(null);
+  const [users, setUsers] = useState<OrgUser[]>([]);
+
+  useEffect(() => {
+    (async () => {
+      const [logResp, usersResp] = await Promise.all([
+        authFetch(`/organizations/${orgId}/audit-log?limit=8`),
+        authFetch(`/organizations/${orgId}/users`),
+      ]);
+      if (logResp.ok) setEntries(await logResp.json());
+      if (usersResp.ok) setUsers(await usersResp.json());
+    })();
+  }, [authFetch, orgId]);
+
+  const nameFor = (userId: string | null) => {
+    if (!userId) return "System";
+    return users.find((u) => u.id === userId)?.full_name ?? userId.slice(0, 8);
+  };
+
+  return (
+    <Card title="Recent activity" description="The latest recorded actions across every station you're authorized to see.">
+      {!entries ? (
+        <p className="text-sm text-ink-soft">Loading…</p>
+      ) : entries.length === 0 ? (
+        <p className="text-sm text-ink-soft">No recent activity recorded yet.</p>
+      ) : (
+        <ul className="divide-y divide-border">
+          {entries.map((e) => (
+            <li key={e.id} className="flex items-center justify-between gap-3 py-2 text-sm">
+              <span className="flex items-center gap-2 text-ink">
+                <Activity className="h-3.5 w-3.5 flex-shrink-0 text-ink-faint" aria-hidden />
+                {humanizeAction(e.action)}
+              </span>
+              <span className="whitespace-nowrap text-xs text-ink-faint">
+                {nameFor(e.actor_user_id)} · {new Date(e.created_at).toLocaleString()}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
   );
 }
 

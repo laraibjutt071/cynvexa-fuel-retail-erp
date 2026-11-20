@@ -334,6 +334,18 @@ export interface OrgStationPerformanceReport {
   rows: StationPerformanceRow[];
 }
 
+export interface OrgDailySalesDay {
+  sales_date: string;
+  litres_sold: string;
+  expected_revenue: string;
+}
+
+export interface OrgDailySalesReport {
+  date_from: string;
+  date_to: string;
+  days: OrgDailySalesDay[];
+}
+
 export interface Station {
   id: string;
   organization_id: string;

@@ -27,10 +27,10 @@ async function apiLogin(request: APIRequestContext): Promise<string> {
   return body.access_token as string;
 }
 
-async function uiLogin(page: Page) {
+async function uiLogin(page: Page, email: string = state.ownerEmail, password: string = state.ownerPassword) {
   await page.goto("/login");
-  await page.fill("#email", state.ownerEmail);
-  await page.fill("#password", state.ownerPassword);
+  await page.fill("#email", email);
+  await page.fill("#password", password);
   await page.click('button[type="submit"]');
   await expect(page).toHaveURL(/\/dashboard/);
 }
@@ -197,5 +197,72 @@ test.describe("Meter event management", () => {
 
     await page.goto(`/dashboard/org/${state.orgId}/station/${unrelatedStation.id}/meter-events`);
     await expect(page.getByText("Access restricted")).toBeVisible();
+  });
+
+  test("the sidebar's Meter Events link is visible and navigable for an authorized Owner", async ({
+    page,
+    request,
+  }) => {
+    const token = await apiLogin(request);
+    const auth = { Authorization: `Bearer ${token}` };
+    const station = await (
+      await request.post(`${API_BASE}/organizations/${state.orgId}/stations`, {
+        headers: auth,
+        data: { name: "E2E Meter Events Nav Station", code: `E2EMEN-${Date.now().toString(36)}` },
+      })
+    ).json();
+
+    await uiLogin(page);
+    await page.goto(`/dashboard/org/${state.orgId}/station/${station.id}/today`);
+    await expect(page.getByRole("link", { name: "Meter Events" })).toBeVisible();
+    await page.getByRole("link", { name: "Meter Events" }).click();
+    await expect(page).toHaveURL(new RegExp(`/station/${station.id}/meter-events$`));
+  });
+
+  test("the sidebar's Meter Events link disappears at a station the signed-in role isn't granted at", async ({
+    page,
+    request,
+  }) => {
+    const token = await apiLogin(request);
+    const auth = { Authorization: `Bearer ${token}` };
+    const station = await (
+      await request.post(`${API_BASE}/organizations/${state.orgId}/stations`, {
+        headers: auth,
+        data: { name: "E2E Meter Events Nav Granted Station", code: `E2EMENG-${Date.now().toString(36)}` },
+      })
+    ).json();
+    const unrelatedStation = await (
+      await request.post(`${API_BASE}/organizations/${state.orgId}/stations`, {
+        headers: auth,
+        data: { name: "E2E Meter Events Nav Isolation Station", code: `E2EMENI-${Date.now().toString(36)}` },
+      })
+    ).json();
+
+    // A station-scoped role granted only at `station`, not at
+    // `unrelatedStation` - the nav link must disappear at the station
+    // they're not authorized for, not just the page behind it.
+    const roles = await (await request.get(`${API_BASE}/roles`, { headers: auth })).json();
+    const cashierRole = roles.find((r: { name: string }) => r.name === "Cashier / Operator");
+    const runId = Date.now().toString(36);
+    const email = `e2e-me-nav-${runId}@e2e-dev.com`;
+    const password = "E2eMeNav!23";
+    const created = await (
+      await request.post(`${API_BASE}/organizations/${state.orgId}/users`, {
+        headers: auth,
+        data: { email, full_name: "E2E ME Nav", password },
+      })
+    ).json();
+    await request.post(`${API_BASE}/organizations/${state.orgId}/users/${created.id}/roles`, {
+      headers: auth,
+      data: { role_id: cashierRole.id, station_id: station.id },
+    });
+
+    await uiLogin(page, email, password);
+
+    await page.goto(`/dashboard/org/${state.orgId}/station/${station.id}/today`);
+    await expect(page.getByRole("link", { name: "Meter Events" })).toBeVisible();
+
+    await page.goto(`/dashboard/org/${state.orgId}/station/${unrelatedStation.id}/today`);
+    await expect(page.getByRole("link", { name: "Meter Events" })).toHaveCount(0);
   });
 });

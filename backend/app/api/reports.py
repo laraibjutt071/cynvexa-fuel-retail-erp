@@ -413,10 +413,17 @@ async def pending_approvals_report(
     shifts_closed = (await db.execute(shift_stmt)).scalars().all()
     shifts_awaiting = len(shifts_closed)
 
-    meter_stmt = select(ShiftNozzleReading).where(
-        ShiftNozzleReading.meter_event_type.is_not(None),
-        ShiftNozzleReading.meter_event_approved_by_user_id.is_(None),
+    meter_stmt = (
+        select(ShiftNozzleReading)
+        .join(Shift, Shift.id == ShiftNozzleReading.shift_id)
+        .where(
+            Shift.organization_id == organization_id,
+            ShiftNozzleReading.meter_event_type.is_not(None),
+            ShiftNozzleReading.meter_event_approved_by_user_id.is_(None),
+        )
     )
+    if (f := _station_filter(Shift.station_id)) is not None:
+        meter_stmt = meter_stmt.where(f)
     unapproved_meter_events = len((await db.execute(meter_stmt)).scalars().all())
 
     recon_stmt = (

@@ -2,6 +2,16 @@
 
 Ranked by what would actually hurt in production, not by how interesting the finding is. Each item says what was found, what (if anything) was fixed, and what's still open. Cross-references to `docs/ASSUMPTIONS.md` are for the full technical reasoning; this file is the prioritized summary.
 
+## Final pre-deployment fixes + Client Owner Dashboard enhancement (2026-11-20)
+
+**Closed**: the Meter Events page's discoverability gap flagged in `docs/FINAL_PRE_DEPLOYMENT_AUDIT.md` (WARNING - no sidebar nav entry existed, reachable only by direct URL). A station-scoped nav item was added (`components/AppShell.tsx`), gated on `shift:read`, following the exact pattern every other station-scoped nav item already uses - verified with real authorized/unauthorized roles, not just a superuser, in 2 new Playwright tests (one confirming the link disappears at a station the signed-in role isn't granted at).
+
+**Closed - real cross-tenant data leak, found during this phase's own dashboard audit, not previously known**: `backend/app/api/reports.py::pending_approvals_report`'s `unapproved_meter_events` count had no organization or station filter at all - it counted unapproved meter events across every organization in the database, not just the caller's own, while every sibling field in the same function correctly scoped by org/station. Fixed by joining to `Shift` and applying the identical org/station filter every other field already had. A new regression test constructs a flagged event in a separate organization and asserts the caller's own org still sees zero. No row-level data was ever exposed (count only), but this was a real isolation defect, not a stylistic gap - full detail in `docs/CLIENT_OWNER_DASHBOARD_REPORT.md`.
+
+**Enhanced, not duplicated**: the existing Phase 8c Client Owner Dashboard (`overview/page.tsx`) gained a live, 60-second auto-refreshing daily sales trend chart (backed by one new read-only endpoint, `GET .../reports/daily-sales`, reusing the existing per-shift revenue/litres calculation functions, zero-filled per day, no new model or migration), a supplier-outstanding-balance KPI, a pending-approvals attention centre, and a recent-activity feed - each gated on its own real permission and omitted (not errored) when not held. A real race-condition bug in the first auto-refresh implementation (a shared cancellation flag could let a stale background request block or leak into a newer date-range selection) was caught by an existing Playwright test and fixed with a generation-token pattern before being reported as working. Full detail in `docs/CLIENT_OWNER_DASHBOARD_REPORT.md`.
+
+**New gap, not fixed this phase (documented, not fabricated)**: no dedicated "pending stock reconciliation" KPI exists as a standalone figure - no existing endpoint returns one; the closest existing figure (low-stock inventory items) is a different concept and is already surfaced in the new attention centre.
+
 ## Would block a real multi-replica production launch
 
 1. **Local-disk evidence storage** (`app/core/storage.py`). Not fixed - already a known Phase B limitation, re-confirmed still true. Breaks silently (no error, just inconsistent visibility) with more than one backend replica. Fix: object storage (S3 or equivalent); the schema already supports the swap (`Attachment.storage_backend`). `docs/ASSUMPTIONS.md` #31.

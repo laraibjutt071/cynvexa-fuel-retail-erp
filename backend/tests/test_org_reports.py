@@ -480,6 +480,61 @@ async def test_station_with_no_activity_reports_zero(client: AsyncClient, owner_
     assert resp.json()["total_litres_sold"] == "0"
 
 
+async def test_daily_sales_attributes_a_shift_to_its_own_day_and_zero_fills_the_rest(
+    client: AsyncClient, owner_user, org, station, tank_with_stock, nozzle, fuel_grade, fuel_price, cash_payment_method
+):
+    token = await login(client, "owner@acmefuel-dev.com")
+    await _full_approved_shift(client, token, org, station, tank_with_stock, nozzle, cash_payment_method, litres="800")
+
+    resp = await client.get(
+        f"{_org_reports_base(org)}/daily-sales?date_from={_DATE_FROM}&date_to={_DATE_TO}", headers=auth_headers(token)
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    today = date.today().isoformat()
+    days_by_date = {d["sales_date"]: d for d in body["days"]}
+
+    # Every day in the requested range appears, not just days with activity.
+    assert days_by_date[today]["litres_sold"] == "800.000"
+    assert days_by_date[today]["expected_revenue"] == "224000.00"
+    other_days = [d for d in body["days"] if d["sales_date"] != today]
+    assert len(other_days) == len(body["days"]) - 1
+    for d in other_days:
+        assert d["litres_sold"] == "0"
+        assert d["expected_revenue"] == "0"
+
+
+async def test_daily_sales_combines_same_day_shifts_across_authorized_stations(
+    client: AsyncClient, db: AsyncSession, owner_user, org, station, tank_with_stock, nozzle, fuel_grade, fuel_price, cash_payment_method
+):
+    token = await login(client, "owner@acmefuel-dev.com")
+    await _full_approved_shift(client, token, org, station, tank_with_stock, nozzle, cash_payment_method, litres="800")
+    station2, tank2, nozzle2 = await _second_station_with_tank(db, org, fuel_grade)
+    await _full_approved_shift(client, token, org, station2, tank2, nozzle2, cash_payment_method, litres="500")
+
+    resp = await client.get(
+        f"{_org_reports_base(org)}/daily-sales?date_from={_DATE_FROM}&date_to={_DATE_TO}", headers=auth_headers(token)
+    )
+    today = date.today().isoformat()
+    body = {d["sales_date"]: d for d in resp.json()["days"]}
+    assert body[today]["litres_sold"] == "1300.000"
+    assert body[today]["expected_revenue"] == str(Decimal("224000.00") + Decimal("500") * Decimal("280.00"))
+
+
+async def test_daily_sales_rejects_an_unauthorized_station_filter(
+    client: AsyncClient, db: AsyncSession, station_manager_user, org, station, fuel_grade, seeded_roles
+):
+    """station_manager_user holds report:read scoped to `station` only -
+    same rule as the sibling /sales endpoint's own test."""
+    other_station, _, _ = await _second_station_with_tank(db, org, fuel_grade, code="ST-OTHER-DS")
+    token = await login(client, station_manager_user.email)
+    resp = await client.get(
+        f"{_org_reports_base(org)}/daily-sales?date_from={_DATE_FROM}&date_to={_DATE_TO}&station_id={other_station.id}",
+        headers=auth_headers(token),
+    )
+    assert resp.status_code == 403
+
+
 # ---- 15. Support-session read-only restrictions (Phase 5b preserved) ----
 
 

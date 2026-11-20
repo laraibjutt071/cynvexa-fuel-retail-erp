@@ -162,3 +162,22 @@ class OrgStationPerformanceReport(BaseModel):
     date_from: date
     date_to: date
     rows: list[StationPerformanceRow]
+
+
+class OrgDailySalesDay(BaseModel):
+    """One calendar day's totals across every authorized station, from
+    approved shifts only - the same expected-revenue and ledger-litres
+    sources every other sales/revenue report in this file already uses.
+    A day with no approved shift still appears here with zero values,
+    never omitted - a client-facing trend chart must show a real gap,
+    not silently skip it."""
+
+    sales_date: date
+    litres_sold: Decimal
+    expected_revenue: Decimal
+
+
+class OrgDailySalesReport(BaseModel):
+    date_from: date
+    date_to: date
+    days: list[OrgDailySalesDay]
