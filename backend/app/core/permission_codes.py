@@ -134,6 +134,18 @@ ATTENDANCE_READ = "attendance:read"
 ATTENDANCE_RECORD = "attendance:record"
 PAYROLL_MANAGE = "payroll:manage"
 
+# EV charging (blueprint §14A) - a deliberately separate energy workflow
+# from fuel, never posted to the fuel stock ledger. Follows the same
+# master-data (read/manage) and financial (record/approve) split already
+# used for tanks/dispensers and shift reconciliation respectively -
+# EV_SESSION_APPROVE (reversing a session) is Accountant+Owner only, the
+# same separation-of-duties boundary as SHIFT_RECONCILE_APPROVE.
+EV_CHARGER_READ = "ev_charger:read"
+EV_CHARGER_MANAGE = "ev_charger:manage"
+EV_SESSION_READ = "ev_session:read"
+EV_SESSION_RECORD = "ev_session:record"
+EV_SESSION_APPROVE = "ev_session:approve"
+
 ALL_PERMISSIONS: dict[str, str] = {
     ORGANIZATION_READ: "View organization profile and settings.",
     ORGANIZATION_UPDATE: "Edit organization profile and settings.",
@@ -196,6 +208,11 @@ ALL_PERMISSIONS: dict[str, str] = {
     ATTENDANCE_RECORD: "Record or edit attendance entries.",
     PAYROLL_MANAGE: "Manage payroll rules and generate salary records.",
     SUBSCRIPTION_READ: "View the organization's own subscription plan, status and payment history.",
+    EV_CHARGER_READ: "View EV charger, port and tariff configuration.",
+    EV_CHARGER_MANAGE: "Create or edit an EV charger, its ports, and set a new effective-dated tariff.",
+    EV_SESSION_READ: "View EV charging session records.",
+    EV_SESSION_RECORD: "Open, close or mark a fault/cancellation on an EV charging session.",
+    EV_SESSION_APPROVE: "Reverse a completed EV charging session.",
 }
 
 # Seed roles. Per docs/ASSUMPTIONS.md #11 and #7, this is a starting point for the
@@ -246,6 +263,10 @@ SEED_ROLES: dict[str, list[str]] = {
         ATTENDANCE_READ,
         ATTENDANCE_RECORD,
         PAYROLL_MANAGE,
+        EV_CHARGER_READ,
+        EV_CHARGER_MANAGE,
+        EV_SESSION_READ,
+        EV_SESSION_RECORD,
     ],
     "Shift Supervisor": [
         STATION_READ,
@@ -271,6 +292,9 @@ SEED_ROLES: dict[str, list[str]] = {
         INVENTORY_ITEM_READ,
         INVENTORY_MOVEMENT_READ,
         INVENTORY_MOVEMENT_RECORD,
+        EV_CHARGER_READ,
+        EV_SESSION_READ,
+        EV_SESSION_RECORD,
     ],
     "Cashier / Operator": [
         STATION_READ,
@@ -291,6 +315,9 @@ SEED_ROLES: dict[str, list[str]] = {
         INVENTORY_ITEM_READ,
         INVENTORY_MOVEMENT_READ,
         INVENTORY_MOVEMENT_RECORD,
+        EV_CHARGER_READ,
+        EV_SESSION_READ,
+        EV_SESSION_RECORD,
     ],
     "Accountant": [
         STATION_READ,
@@ -319,6 +346,9 @@ SEED_ROLES: dict[str, list[str]] = {
         SUBSCRIPTION_READ,
         ATTENDANCE_READ,
         PAYROLL_MANAGE,
+        EV_CHARGER_READ,
+        EV_SESSION_READ,
+        EV_SESSION_APPROVE,
     ],
     "Storekeeper / Technician": [
         STATION_READ,
@@ -337,6 +367,8 @@ SEED_ROLES: dict[str, list[str]] = {
         INVENTORY_MOVEMENT_READ,
         INVENTORY_MOVEMENT_RECORD,
         INVENTORY_MOVEMENT_ADJUST,
+        EV_CHARGER_READ,
+        EV_CHARGER_MANAGE,
     ],
     "Auditor / Viewer": [
         STATION_READ,
@@ -360,5 +392,7 @@ SEED_ROLES: dict[str, list[str]] = {
         INVENTORY_ITEM_READ,
         INVENTORY_MOVEMENT_READ,
         REPORT_READ,
+        EV_CHARGER_READ,
+        EV_SESSION_READ,
     ],
 }

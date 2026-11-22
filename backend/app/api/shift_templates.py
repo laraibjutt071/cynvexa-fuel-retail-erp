@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.common import get_station_or_404
 from app.api.deps import get_db, require_permission
 from app.core.audit import write_audit_log
+from app.core.cache import cache_delete, cache_get, cache_set
 from app.core.permission_codes import STATION_UPDATE
 from app.exceptions import ConflictError, NotFoundError
 from app.models.shift_template import ShiftTemplate
@@ -17,6 +18,12 @@ router = APIRouter(
     prefix="/organizations/{organization_id}/stations/{station_id}/shift-templates",
     tags=["shift-templates"],
 )
+
+_LIST_CACHE_TTL_SECONDS = 30
+
+
+def _list_cache_key(station_id: uuid.UUID) -> str:
+    return f"shift_templates:list:{station_id}"
 
 
 @router.post("", response_model=ShiftTemplateRead, status_code=201)
@@ -53,6 +60,7 @@ async def create_shift_template(
         ip_address=request.client.host if request.client else None,
     )
     await db.commit()
+    await cache_delete(_list_cache_key(station_id))
     return tmpl
 
 
@@ -64,12 +72,22 @@ async def list_shift_templates(
     db: AsyncSession = Depends(get_db),
 ) -> list[ShiftTemplate]:
     await get_station_or_404(db, organization_id, station_id)
+
+    cache_key = _list_cache_key(station_id)
+    cached = await cache_get(cache_key)
+    if cached is not None:
+        return cached
+
     result = await db.execute(
         select(ShiftTemplate)
         .where(ShiftTemplate.station_id == station_id)
         .order_by(ShiftTemplate.start_time)
     )
-    return list(result.scalars().all())
+    templates = list(result.scalars().all())
+
+    payload = [ShiftTemplateRead.model_validate(t).model_dump(mode="json") for t in templates]
+    await cache_set(cache_key, payload, ttl_seconds=_LIST_CACHE_TTL_SECONDS)
+    return templates
 
 
 @router.patch("/{template_id}", response_model=ShiftTemplateRead)
@@ -111,4 +129,5 @@ async def update_shift_template(
         ip_address=request.client.host if request.client else None,
     )
     await db.commit()
+    await cache_delete(_list_cache_key(station_id))
     return tmpl

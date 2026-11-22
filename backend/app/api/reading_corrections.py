@@ -132,6 +132,32 @@ async def request_reading_correction(
     if original_value == payload.corrected_value:
         raise ValidationFailedError("Corrected value is the same as the original value.")
 
+    # Block a second pending request for the same reading - two pending
+    # corrections against one reading would let approving the second one
+    # silently overwrite whatever the first approval already set (see
+    # _assert_not_stale's docstring for the other half of this defense).
+    # .first(), not .scalar_one_or_none(): this check is what prevents more
+    # than one pending correction from existing for a reading, so it must
+    # not itself raise (MultipleResultsFound -> 500) against data that
+    # already has more than one - e.g. rows created before this check
+    # existed.
+    existing_pending = (
+        await db.execute(
+            select(ReadingCorrection).where(
+                ReadingCorrection.shift_id == shift_id,
+                ReadingCorrection.reading_type == payload.reading_type.value,
+                ReadingCorrection.tank_reading_id == payload.tank_reading_id,
+                ReadingCorrection.nozzle_reading_id == payload.nozzle_reading_id,
+                ReadingCorrection.status == CorrectionStatus.PENDING.value,
+            )
+        )
+    ).scalars().first()
+    if existing_pending is not None:
+        raise ConflictError(
+            "A correction for this reading is already pending - approve or reject it before "
+            "requesting another one."
+        )
+
     now = _now_utc()
     is_post_lock = not _is_within_correction_window(submitted_at, now)
 
@@ -293,17 +319,56 @@ async def _get_correction_locked(
     return correction
 
 
+_CURRENT_VALUE_GETTERS = {
+    ReadingType.TANK_DIP.value: lambda r: r.dip_reading,
+    ReadingType.NOZZLE_OPENING.value: lambda r: r.opening_totalizer,
+    ReadingType.NOZZLE_CLOSING.value: lambda r: r.closing_totalizer,
+    ReadingType.METER_EVENT_PRE.value: lambda r: r.meter_event_pre_reading,
+    ReadingType.METER_EVENT_POST.value: lambda r: r.meter_event_post_reading,
+}
+
+
+def _assert_not_stale(correction: ReadingCorrection, reading) -> None:
+    """
+    Guards against a second pending correction clobbering a first one: if
+    some other approved correction (or anything else) already changed this
+    reading since this request was filed, correction.original_value no
+    longer matches what's actually stored. Applying corrected_value anyway
+    would silently overwrite whatever the first approval set, with no
+    record that a conflict ever happened - the approver of this one would
+    have no way to know their decision was based on a number that's no
+    longer true. See request_reading_correction's own duplicate-pending
+    check for the other half of this defense: that one stops the conflict
+    from being created at all; this one catches it if it's created anyway
+    (e.g. two already-pending requests from before that check existed).
+    """
+    getter = _CURRENT_VALUE_GETTERS.get(correction.reading_type)
+    if getter is None:
+        return
+    current_value = getter(reading)
+    if current_value != correction.original_value:
+        raise ConflictError(
+            f"This reading has changed since this correction was requested (was "
+            f"{correction.original_value}, is now {current_value}) - likely because another "
+            "correction for the same reading was already approved. Reject this one and ask the "
+            "requester to resubmit against the current value if a change is still needed."
+        )
+
+
 async def _apply_correction_to_reading(db: AsyncSession, correction: ReadingCorrection) -> None:
     if correction.reading_type == ReadingType.TANK_DIP.value:
         reading = await _get_tank_reading_locked(db, correction.tank_reading_id, correction.shift_id)
+        _assert_not_stale(correction, reading)
         reading.dip_reading = correction.corrected_value
 
     elif correction.reading_type == ReadingType.NOZZLE_OPENING.value:
         reading = await _get_nozzle_reading_locked(db, correction.nozzle_reading_id, correction.shift_id)
+        _assert_not_stale(correction, reading)
         reading.opening_totalizer = correction.corrected_value
 
     elif correction.reading_type == ReadingType.NOZZLE_CLOSING.value:
         reading = await _get_nozzle_reading_locked(db, correction.nozzle_reading_id, correction.shift_id)
+        _assert_not_stale(correction, reading)
         reading.closing_totalizer = correction.corrected_value
         if reading.meter_event_type is None:
             reading.dispensed_litres = reading.closing_totalizer - reading.opening_totalizer
@@ -314,6 +379,7 @@ async def _apply_correction_to_reading(db: AsyncSession, correction: ReadingCorr
 
     elif correction.reading_type == ReadingType.METER_EVENT_PRE.value:
         reading = await _get_nozzle_reading_locked(db, correction.nozzle_reading_id, correction.shift_id)
+        _assert_not_stale(correction, reading)
         reading.meter_event_pre_reading = correction.corrected_value
         if reading.closing_totalizer is not None:
             segment_1 = correction.corrected_value - reading.opening_totalizer
@@ -322,6 +388,7 @@ async def _apply_correction_to_reading(db: AsyncSession, correction: ReadingCorr
 
     elif correction.reading_type == ReadingType.METER_EVENT_POST.value:
         reading = await _get_nozzle_reading_locked(db, correction.nozzle_reading_id, correction.shift_id)
+        _assert_not_stale(correction, reading)
         reading.meter_event_post_reading = correction.corrected_value
         if reading.closing_totalizer is not None:
             segment_1 = reading.meter_event_pre_reading - reading.opening_totalizer

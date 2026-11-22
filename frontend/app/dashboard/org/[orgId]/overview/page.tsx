@@ -262,19 +262,19 @@ function OverviewTab({
         <StatCard label="Total fuel sold" value={formatLitres(sales.total_litres_sold)} icon={Fuel} tone="brand" />
         <StatCard
           label="Total revenue"
-          value={formatMoney(revenue.total_recognized_revenue)}
+          value={`PKR ${formatMoney(revenue.total_recognized_revenue)}`}
           icon={Wallet}
           tone="success"
           subtitle="Litres x price, never cash collected"
         />
         <StatCard
           label="Cash collected"
-          value={formatMoney(revenue.cash_amount)}
+          value={`PKR ${formatMoney(revenue.cash_amount)}`}
           icon={Banknote}
           tone="neutral"
-          subtitle={`of ${formatMoney(revenue.total_tender_amount)} total tendered`}
+          subtitle={`of PKR ${formatMoney(revenue.total_tender_amount)} total tendered`}
         />
-        <StatCard label="Approved expenses" value={formatMoney(expenses.grand_approved)} icon={Receipt} tone="warning" />
+        <StatCard label="Approved expenses" value={`PKR ${formatMoney(expenses.grand_approved)}`} icon={Receipt} tone="warning" />
         {totalSupplierOutstanding !== null && (
           <StatCard
             label="Supplier outstanding balance"
@@ -308,13 +308,13 @@ function OverviewTab({
           ].map((row) => (
             <div key={row.label} className="rounded-lg border border-border bg-surface-elevated p-3">
               <p className="text-xs text-ink-soft">{row.label}</p>
-              <p className="mt-1 text-lg font-semibold tabular-nums text-ink">{formatMoney(row.value)}</p>
+              <p className="mt-1 text-lg font-semibold tabular-nums text-ink">PKR {formatMoney(row.value)}</p>
             </div>
           ))}
         </div>
       </Card>
 
-      <Card title="Expense categories" description={`Grand total ${formatMoney(expenses.grand_total)} (includes reversed entries); approved ${formatMoney(expenses.grand_approved)}.`}>
+      <Card title="Expense categories" description={`Grand total PKR ${formatMoney(expenses.grand_total)} (includes reversed entries); approved PKR ${formatMoney(expenses.grand_approved)}.`}>
         {expenses.by_category.length === 0 ? (
           <p className="text-sm text-ink-soft">No expenses recorded in this range.</p>
         ) : (
@@ -323,7 +323,7 @@ function OverviewTab({
               <li key={row.category} className="flex items-center justify-between py-2 text-sm">
                 <span className="text-ink">{row.category}</span>
                 <span className="tabular-nums text-ink-soft">
-                  {formatMoney(row.approved_amount)} approved / {formatMoney(row.total_amount)} total
+                  PKR {formatMoney(row.approved_amount)} approved / PKR {formatMoney(row.total_amount)} total
                 </span>
               </li>
             ))}
@@ -634,9 +634,9 @@ function ComparisonTab({
   const columns: Column<StationPerformanceRow>[] = [
     { key: "station", header: "Station", render: (r) => r.station_name },
     { key: "litres", header: "Litres sold", align: "right", sortable: true, sortValue: (r) => Number(r.litres_sold), render: (r) => formatLitres(r.litres_sold) },
-    { key: "revenue", header: "Expected revenue", align: "right", sortable: true, sortValue: (r) => Number(r.expected_revenue), render: (r) => formatMoney(r.expected_revenue) },
-    { key: "tender", header: "Tendered", align: "right", sortable: true, sortValue: (r) => Number(r.total_tender_amount), render: (r) => formatMoney(r.total_tender_amount) },
-    { key: "expenses", header: "Approved expenses", align: "right", sortable: true, sortValue: (r) => Number(r.approved_expenses), render: (r) => formatMoney(r.approved_expenses) },
+    { key: "revenue", header: "Expected revenue", align: "right", sortable: true, sortValue: (r) => Number(r.expected_revenue), render: (r) => `PKR ${formatMoney(r.expected_revenue)}` },
+    { key: "tender", header: "Tendered", align: "right", sortable: true, sortValue: (r) => Number(r.total_tender_amount), render: (r) => `PKR ${formatMoney(r.total_tender_amount)}` },
+    { key: "expenses", header: "Approved expenses", align: "right", sortable: true, sortValue: (r) => Number(r.approved_expenses), render: (r) => `PKR ${formatMoney(r.approved_expenses)}` },
     { key: "stock", header: "Current stock", align: "right", sortable: true, sortValue: (r) => Number(r.total_book_stock), render: (r) => formatLitres(r.total_book_stock) },
     { key: "employees", header: "Employees", align: "right", render: (r) => formatNumber(r.employee_count) },
   ];
@@ -654,7 +654,7 @@ function ComparisonTab({
           title="Expected revenue by station"
           valueLabel="Revenue"
           data={report.rows.map((r) => ({ label: r.station_name, value: Number(r.expected_revenue) }))}
-          formatValue={(v) => formatMoney(v)}
+          formatValue={(v) => `PKR ${formatMoney(v)}`}
         />
       </div>
       <Card

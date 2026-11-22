@@ -44,9 +44,9 @@ class PayrollRuleCreate(BaseModel):
     shift_start_time: time
     late_threshold_minutes: int = Field(default=15, ge=0)
     half_day_threshold_minutes: int = Field(default=120, ge=0)
-    late_deduction_amount: Decimal = Field(default=0, ge=0)
-    absent_deduction_amount: Decimal = Field(default=0, ge=0)
-    half_day_deduction_amount: Decimal = Field(default=0, ge=0)
+    late_deduction_amount: Decimal = Field(default=Decimal("0"), ge=0)
+    absent_deduction_amount: Decimal = Field(default=Decimal("0"), ge=0)
+    half_day_deduction_amount: Decimal = Field(default=Decimal("0"), ge=0)
 
 
 class PayrollRuleUpdate(BaseModel):

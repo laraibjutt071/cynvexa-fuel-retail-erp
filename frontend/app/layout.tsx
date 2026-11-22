@@ -23,7 +23,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "CYNVEXA Fuel Retail ERP",
+  title: "PetroNiq Fuel Retail ERP",
   description: "Operational and financial reconciliation for fuel retail stations.",
 };
 

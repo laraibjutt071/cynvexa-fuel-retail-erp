@@ -27,6 +27,7 @@ import {
   UserCog,
   Wallet,
   X,
+  Zap,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useParams, useRouter } from "next/navigation";
@@ -37,6 +38,7 @@ import { useLanguage } from "@/lib/i18n/context";
 import type { TranslationKey } from "@/lib/i18n/translations";
 import { ThemeToggleIcon, ThemeToggleRow } from "@/components/ui/ThemeToggle";
 import { StationSwitcher } from "@/components/StationSwitcher";
+import { StationSearchBar } from "@/components/StationSearchBar";
 
 interface NavItem {
   labelKey: TranslationKey;
@@ -129,6 +131,13 @@ function buildNav(orgId: string, stationId: string | null): NavItem[] {
       needsStation: true,
     },
     {
+      labelKey: "nav.evCharging",
+      href: `/dashboard/org/${orgId}/station/${station}/ev-charging`,
+      icon: Zap,
+      anyPermission: ["ev_charger:read", "ev_session:read"],
+      needsStation: true,
+    },
+    {
       labelKey: "nav.suppliers",
       href: `/dashboard/org/${orgId}/suppliers`,
       icon: Package,
@@ -210,7 +219,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             <Fuel className="h-4.5 w-4.5" aria-hidden />
           </div>
           <div className="min-w-0">
-            <span className="block text-sm font-bold text-ink">CYNVEXA</span>
+            <span className="block text-sm font-bold text-ink">PetroNiq</span>
             {currentRole && (
               <span className="block truncate text-xs text-ink-faint">{currentRole}</span>
             )}
@@ -227,11 +236,19 @@ export function AppShell({ children }: { children: ReactNode }) {
               key={item.labelKey}
               href={item.href}
               onClick={() => setMobileOpen(false)}
-              className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
-                active ? "bg-brand-50 text-accent" : "text-ink-soft hover:bg-surface-elevated hover:text-ink"
+              className={`relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-150 ${
+                active
+                  ? "bg-brand-50 text-accent"
+                  : "text-ink-soft hover:translate-x-0.5 hover:bg-surface-elevated hover:text-ink"
               }`}
             >
-              <Icon className="h-4.5 w-4.5 flex-shrink-0" aria-hidden />
+              {/* Left accent bar on the active item - gives it real
+               * visual weight instead of relying on the tint alone to
+               * read as "this is where you are." */}
+              {active && (
+                <span className="absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-full bg-accent" aria-hidden />
+              )}
+              <Icon className={`h-4.5 w-4.5 flex-shrink-0 transition-colors ${active ? "text-accent" : ""}`} aria-hidden />
               {t(item.labelKey)}
             </Link>
           );
@@ -350,9 +367,12 @@ export function AppShell({ children }: { children: ReactNode }) {
           >
             <Menu className="h-5 w-5" />
           </button>
-          <span className="text-sm font-semibold text-ink">CYNVEXA</span>
+          <span className="text-sm font-semibold text-ink">PetroNiq</span>
           <ThemeToggleIcon />
         </header>
+        <div className="hidden justify-center border-b border-border bg-sidebar px-4 py-3 lg:flex">
+          <StationSearchBar orgId={orgId} />
+        </div>
         <main className="flex-1">{children}</main>
       </div>
     </div>

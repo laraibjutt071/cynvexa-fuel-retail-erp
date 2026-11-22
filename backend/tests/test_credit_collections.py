@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
@@ -166,3 +167,74 @@ async def test_cashier_cannot_record_collections(client: AsyncClient, cashier_us
         headers=auth_headers(token),
     )
     assert resp.status_code == 403
+
+
+async def test_ageing_report_reflects_unpaid_balance_in_current_bucket(
+    client: AsyncClient,
+    owner_user,
+    org,
+    station,
+    tank_with_stock,
+    nozzle,
+    fuel_price,
+    credit_payment_method,
+    credit_customer,
+):
+    """Regression test: list_credit_customer_ageing() used to reference
+    ShiftTender.created_at, a field that doesn't exist on that model (it's
+    recorded_at) - every call 500'd. Never caught because nothing tested
+    this endpoint at all."""
+    token = await login(client, "owner@acmefuel-dev.com")
+    await _closed_shift_with_credit_tender(
+        client, token, org, station, tank_with_stock, nozzle, credit_payment_method, credit_customer, amount="42280"
+    )
+
+    resp = await client.get(f"/organizations/{org.id}/credit-customers/ageing", headers=auth_headers(token))
+    assert resp.status_code == 200, resp.text
+    rows = resp.json()
+    row = next(r for r in rows if r["credit_customer_id"] == str(credit_customer.id))
+    # A sale recorded moments ago is unpaid and <=30 days old: it belongs
+    # entirely in "current", every other bucket empty, total unchanged.
+    assert row["current"] == "42280.00"
+    assert row["days_30"] == row["days_60"] == row["days_90"] == row["over_90"] == "0.00"
+    assert row["total"] == "42280.00"
+
+
+async def test_statement_lists_sale_and_payment_with_correct_running_balance(
+    client: AsyncClient,
+    owner_user,
+    org,
+    station,
+    tank_with_stock,
+    nozzle,
+    fuel_price,
+    credit_payment_method,
+    credit_customer,
+):
+    """Regression test: get_credit_customer_statement() had the same
+    ShiftTender.created_at bug in three places - every call 500'd."""
+    token = await login(client, "owner@acmefuel-dev.com")
+    await _closed_shift_with_credit_tender(
+        client, token, org, station, tank_with_stock, nozzle, credit_payment_method, credit_customer, amount="62280"
+    )
+    base = _cbase(org, credit_customer)
+    today = datetime.now(timezone.utc).date()
+    pay = await client.post(
+        f"{base}/payments", json={"amount": "20000.00", "payment_date": today.isoformat()}, headers=auth_headers(token)
+    )
+    assert pay.status_code == 201, pay.text
+
+    start = (today - timedelta(days=1)).isoformat()
+    end = (today + timedelta(days=1)).isoformat()
+    resp = await client.get(
+        f"{base}/statement?start_date={start}&end_date={end}", headers=auth_headers(token)
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["opening_balance"] == "0.00"
+    assert body["closing_balance"] == "42280.00"
+    assert len(body["entries"]) == 2
+    assert body["entries"][0]["debit"] == "62280.00"
+    assert body["entries"][0]["running_balance"] == "62280.00"
+    assert body["entries"][1]["credit"] == "20000.00"
+    assert body["entries"][1]["running_balance"] == "42280.00"

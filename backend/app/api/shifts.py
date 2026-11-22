@@ -29,6 +29,7 @@ from app.models.shift_nozzle_reading import ShiftNozzleReading
 from app.models.shift_price_change import ShiftPriceChange, ShiftPriceChangeReading
 from app.models.shift_reconciliation import ShiftReconciliation
 from app.models.shift_tank_reading import ShiftTankReading, TankReadingType
+from app.models.station import Station
 from app.models.stock_ledger_entry import StockLedgerEntry, StockMovementType
 from app.models.tank import Tank
 from app.models.user import User
@@ -90,7 +91,39 @@ async def open_shift(
     current_user: User = Depends(require_permission(SHIFT_OPEN)),
     db: AsyncSession = Depends(get_db),
 ) -> Shift:
-    await get_station_or_404(db, organization_id, station_id)
+    # Lock the station row for the duration of the "no other open shift"
+    # check and the insert below, so two concurrent open-shift requests for
+    # the same station serialize instead of both passing the check before
+    # either commits. Without this, the station could end up with two
+    # simultaneously OPEN shifts - which breaks the one-shift-at-a-time
+    # reconciliation model: the same nozzle/tank could then receive
+    # independent opening readings under each shift, double-counting or
+    # corrupting litres and cash reconciliation for that period.
+    station = (
+        await db.execute(
+            select(Station)
+            .where(Station.id == station_id, Station.organization_id == organization_id)
+            .with_for_update()
+        )
+    ).scalar_one_or_none()
+    if station is None:
+        raise NotFoundError("Station not found.")
+
+    # .first(), not .scalar_one_or_none(): this check is exactly what
+    # prevents more than one OPEN shift from existing, but must not itself
+    # blow up (MultipleResultsFound -> 500) if it is ever run against data
+    # that already has more than one - e.g. rows left over from before this
+    # check existed.
+    existing_open = (
+        await db.execute(
+            select(Shift).where(Shift.station_id == station_id, Shift.status == ShiftStatus.OPEN.value)
+        )
+    ).scalars().first()
+    if existing_open is not None:
+        raise ConflictError(
+            f"Station already has an open shift ('{existing_open.label or existing_open.id}') - "
+            "close or approve it before opening a new one."
+        )
 
     shift = Shift(
         organization_id=organization_id,

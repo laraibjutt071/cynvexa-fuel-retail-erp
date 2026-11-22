@@ -46,7 +46,7 @@ export default function PlatformLayout({ children }: { children: ReactNode }) {
               <ShieldCheck className="h-4.5 w-4.5" aria-hidden />
             </div>
             <div className="min-w-0">
-              <span className="block text-sm font-bold text-ink">CYNVEXA</span>
+              <span className="block text-sm font-bold text-ink">PetroNiq</span>
               <span className="block truncate text-xs text-ink-faint">Platform Admin</span>
             </div>
           </div>
@@ -99,7 +99,7 @@ export default function PlatformLayout({ children }: { children: ReactNode }) {
       </aside>
 
       <header className="flex items-center justify-between border-b border-border bg-sidebar px-4 py-3 lg:hidden">
-        <span className="text-sm font-semibold text-ink">CYNVEXA Platform Admin</span>
+        <span className="text-sm font-semibold text-ink">PetroNiq Platform Admin</span>
       </header>
 
       <div className="flex min-w-0 flex-1 flex-col">

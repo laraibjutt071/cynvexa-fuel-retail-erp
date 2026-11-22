@@ -10,10 +10,12 @@ import { Card } from "@/components/Card";
 import { Button } from "@/components/ui/Button";
 import { Field, Select, TextInput } from "@/components/ui/Field";
 import { AccessDenied } from "@/components/ui/AccessDenied";
+import { Badge, StatusBadge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ReasonDialog } from "@/components/ui/Dialog";
 import { History } from "lucide-react";
 import type { NozzleOverview, ReadingCorrection, Shift, ShiftNozzleReading, ShiftTankReading, Tank } from "@/lib/types";
+import { formatLitres } from "@/lib/format";
 
 type AuthFetch = ReturnType<typeof useAuth>["authFetch"];
 
@@ -158,7 +160,7 @@ function buildEligibleReadings(
   for (const r of tankReadings) {
     items.push({
       key: `tank:${r.id}`,
-      label: `Tank ${tankCode(r.tank_id)} — ${r.reading_type} dip (${r.dip_reading} L)`,
+      label: `Tank ${tankCode(r.tank_id)} — ${r.reading_type} dip (${formatLitres(r.dip_reading)})`,
       reading_type: "tank_dip",
       tank_reading_id: r.id,
       original_value: r.dip_reading,
@@ -494,14 +496,6 @@ function CorrectionsList({
     }
   }
 
-  const statusBadge = (c: ReadingCorrection) => {
-    if (c.status === "approved")
-      return <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">Approved</span>;
-    if (c.status === "rejected")
-      return <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">Rejected</span>;
-    return <span className="rounded-full bg-yellow-100 px-2 py-0.5 text-xs font-medium text-yellow-800">Pending</span>;
-  };
-
   return (
     <>
       {canRequest && corrections && (
@@ -535,12 +529,8 @@ function CorrectionsList({
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
-                    {c.is_post_lock && (
-                      <span className="rounded-full bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-700">
-                        Post-lock amendment
-                      </span>
-                    )}
-                    {statusBadge(c)}
+                    {c.is_post_lock && <Badge tone="caution">Post-lock amendment</Badge>}
+                    <StatusBadge status={c.status} />
                   </div>
                 </div>
 

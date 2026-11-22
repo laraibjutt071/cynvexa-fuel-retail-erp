@@ -527,7 +527,7 @@ function BillingCard({ orgId, authFetch }: { orgId: string; authFetch: AuthFetch
       {subscription === null ? (
         <p className="text-sm text-ink-soft">Loading…</p>
       ) : subscription === "none" ? (
-        <p className="text-sm text-ink-soft">No subscription set up yet - contact CYNVEXA to get started.</p>
+        <p className="text-sm text-ink-soft">No subscription set up yet - contact PetroNiq to get started.</p>
       ) : (
         <>
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">

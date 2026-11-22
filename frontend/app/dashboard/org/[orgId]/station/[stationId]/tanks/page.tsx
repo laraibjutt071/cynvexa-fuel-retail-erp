@@ -133,7 +133,7 @@ export default function TankManagementPage() {
                     </div>
                     <div className="text-right">
                       <p className="text-sm font-medium text-ink">
-                        Book stock: {tank.book_stock} L
+                        Book stock: {formatLitres(tank.book_stock)}
                       </p>
                       <p className="text-xs text-ink-faint">
                         Available: {formatLitres(tank.safe_capacity_available)}

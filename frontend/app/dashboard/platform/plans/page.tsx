@@ -7,6 +7,7 @@ import { Card } from "@/components/Card";
 import { Button } from "@/components/ui/Button";
 import { Field, TextInput } from "@/components/ui/Field";
 import type { Plan } from "@/lib/types";
+import { formatMoney } from "@/lib/format";
 
 export default function PlansPage() {
   const { authFetch } = useAuth();
@@ -81,8 +82,8 @@ export default function PlansPage() {
                 <tr key={p.id} className="border-b border-border/60">
                   <td className="py-2 pr-2 text-ink">{p.code}</td>
                   <td className="py-2 pr-2 text-ink">{p.name}</td>
-                  <td className="py-2 pr-2 text-ink-soft">{p.price_monthly}</td>
-                  <td className="py-2 pr-2 text-ink-soft">{p.price_annual}</td>
+                  <td className="py-2 pr-2 text-ink-soft">PKR {formatMoney(p.price_monthly)}</td>
+                  <td className="py-2 pr-2 text-ink-soft">PKR {formatMoney(p.price_annual)}</td>
                   <td className="py-2 pr-2 text-ink-soft">{p.max_stations ?? "Unlimited"}</td>
                   <td className="py-2 pr-2 text-ink-soft">{p.max_users ?? "Unlimited"}</td>
                 </tr>

@@ -62,6 +62,27 @@ async def test_cashier_scoped_to_one_station_cannot_read_a_different_station(
     assert other_station_resp.status_code == 403
 
 
+async def test_cashier_scoped_to_one_station_does_not_see_other_stations_in_list(
+    client: AsyncClient, cashier_user, org, station, db
+):
+    """Regression test: list_stations() used to return every station in the
+    organization unconditionally, ignoring the caller's own station scope -
+    a station-scoped role could see every other station's name/code in this
+    org just by calling GET /organizations/{org_id}/stations, even though
+    the single-station detail endpoint already correctly blocked them."""
+    other_station = Station(organization_id=org.id, name="Second Station", code="STN-2")
+    db.add(other_station)
+    await db.commit()
+    await db.refresh(other_station)
+
+    token = await login(client, "cashier@acmefuel-dev.com")
+    resp = await client.get(f"/organizations/{org.id}/stations", headers=auth_headers(token))
+    assert resp.status_code == 200, resp.text
+    visible_ids = {s["id"] for s in resp.json()}
+    assert visible_ids == {str(station.id)}
+    assert str(other_station.id) not in visible_ids
+
+
 async def test_org_wide_role_can_read_every_station_in_its_org(
     client: AsyncClient, owner_user, org, db
 ):
@@ -78,6 +99,10 @@ async def test_org_wide_role_can_read_every_station_in_its_org(
             f"/organizations/{org.id}/stations/{station_id}", headers=auth_headers(token)
         )
         assert resp.status_code == 200
+
+    list_resp = await client.get(f"/organizations/{org.id}/stations", headers=auth_headers(token))
+    assert list_resp.status_code == 200
+    assert {s["id"] for s in list_resp.json()} == {str(s1.id), str(s2.id)}
 
 
 async def test_revoked_role_assignment_loses_access_immediately(

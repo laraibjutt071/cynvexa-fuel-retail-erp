@@ -52,7 +52,7 @@ export default function AcceptInvitationPage() {
           <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-brand-400 to-brand-600 shadow-lg shadow-brand-500/30">
             <Fuel className="h-6 w-6 text-white" />
           </div>
-          <h1 className="mt-4 text-2xl font-bold text-ink">CYNVEXA</h1>
+          <h1 className="mt-4 text-2xl font-bold text-ink">PetroNiq</h1>
         </div>
 
         <div className="rounded-[26px] bg-gradient-to-br from-brand-400/40 via-accent/25 to-brand-700/40 p-[1px] shadow-2xl shadow-black/50">
@@ -128,7 +128,7 @@ export default function AcceptInvitationPage() {
           </div>
         </div>
 
-        <footer className="mt-8 text-center text-xs text-ink-faint">CYNVEXA Fuel Retail ERP</footer>
+        <footer className="mt-8 text-center text-xs text-ink-faint">PetroNiq Fuel Retail ERP</footer>
       </div>
     </main>
   );

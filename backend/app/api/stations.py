@@ -10,7 +10,9 @@ from app.api.common import get_organization_or_404, get_station_or_404
 from app.api.deps import get_db, require_permission
 from app.core.audit import write_audit_log
 from app.core.permission_codes import STATION_CREATE, STATION_READ, STATION_UPDATE
+from app.core.permissions import get_station_visibility_scope
 from app.core.plan_limits import enforce_station_limit
+from app.core.support_sessions import superuser_visible_station_ids
 from app.exceptions import ConflictError
 from app.models.station import Station
 from app.models.user import User
@@ -64,7 +66,22 @@ async def list_stations(
     current_user: User = Depends(require_permission(STATION_READ)),
     db: AsyncSession = Depends(get_db),
 ) -> list[Station]:
-    result = await db.execute(select(Station).where(Station.organization_id == organization_id))
+    # require_permission only confirmed STATION_READ exists *somewhere* in
+    # this organization (station_id is None there for an org-level list
+    # request) - a station-scoped role (e.g. a single-station manager) must
+    # still only see their own station(s), not every station in the org.
+    stmt = select(Station).where(Station.organization_id == organization_id)
+    if current_user.is_superuser:
+        visible_station_ids = await superuser_visible_station_ids(
+            db, current_user=current_user, organization_id=organization_id
+        )
+    else:
+        visible_station_ids = await get_station_visibility_scope(
+            db, user_id=current_user.id, organization_id=organization_id, permission_code=STATION_READ
+        )
+    if visible_station_ids is not None:
+        stmt = stmt.where(Station.id.in_(visible_station_ids))
+    result = await db.execute(stmt)
     return list(result.scalars().all())
 
 

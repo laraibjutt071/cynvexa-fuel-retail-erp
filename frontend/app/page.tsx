@@ -15,7 +15,7 @@ export default function Home() {
 
   return (
     <main className="flex flex-1 items-center justify-center">
-      <p className="text-ink-soft">Loading CYNVEXA Fuel Retail ERP…</p>
+      <p className="text-ink-soft">Loading PetroNiq Fuel Retail ERP…</p>
     </main>
   );
 }

@@ -66,7 +66,7 @@ async def provision_organization_with_owner(
 
     owner_role = (await db.execute(select(Role).where(Role.name == "Owner"))).scalar_one_or_none()
     if owner_role is None:
-        raise ServiceUnavailableError("This CYNVEXA instance isn't fully set up yet. Please contact support.")
+        raise ServiceUnavailableError("This PetroNiq instance isn't fully set up yet. Please contact support.")
 
     resolved_plan_code = plan_code or "starter"
     plan = (

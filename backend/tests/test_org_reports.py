@@ -1,4 +1,4 @@
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
@@ -324,7 +324,7 @@ async def test_reversed_expense_excluded_from_approved_total_but_kept_in_grand_t
     client: AsyncClient, db: AsyncSession, owner_user, org, seeded_roles
 ):
     token = await login(client, "owner@acmefuel-dev.com")
-    today = date.today().isoformat()
+    today = datetime.now(timezone.utc).date().isoformat()
     create = await client.post(
         f"/organizations/{org.id}/expenses",
         json={"category": "fuel", "description": "Generator diesel", "amount": "5000", "expense_date": today},
@@ -370,14 +370,14 @@ async def test_date_range_boundaries_are_inclusive_like_the_station_level_report
     token = await login(client, "owner@acmefuel-dev.com")
     await _full_approved_shift(client, token, org, station, tank_with_stock, nozzle, cash_payment_method, litres="800")
 
-    today = date.today().isoformat()
+    today = datetime.now(timezone.utc).date().isoformat()
     resp = await client.get(
         f"{_org_reports_base(org)}/sales?date_from={today}&date_to={today}", headers=auth_headers(token)
     )
     assert resp.status_code == 200
     assert resp.json()["shift_count"] == 1
 
-    yesterday = (date.today() - timedelta(days=1)).isoformat()
+    yesterday = (datetime.now(timezone.utc).date() - timedelta(days=1)).isoformat()
     resp2 = await client.get(
         f"{_org_reports_base(org)}/sales?date_from={yesterday}&date_to={yesterday}", headers=auth_headers(token)
     )
@@ -402,7 +402,7 @@ async def test_attendance_does_not_double_count_an_employee_present_at_two_stati
 
     from app.models.attendance import AttendanceRecord
 
-    today = date.today()
+    today = datetime.now(timezone.utc).date()
     db.add(
         AttendanceRecord(
             organization_id=org.id, station_id=station.id, user_id=owner_user.id,
@@ -491,7 +491,7 @@ async def test_daily_sales_attributes_a_shift_to_its_own_day_and_zero_fills_the_
     )
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    today = date.today().isoformat()
+    today = datetime.now(timezone.utc).date().isoformat()
     days_by_date = {d["sales_date"]: d for d in body["days"]}
 
     # Every day in the requested range appears, not just days with activity.
@@ -515,7 +515,7 @@ async def test_daily_sales_combines_same_day_shifts_across_authorized_stations(
     resp = await client.get(
         f"{_org_reports_base(org)}/daily-sales?date_from={_DATE_FROM}&date_to={_DATE_TO}", headers=auth_headers(token)
     )
-    today = date.today().isoformat()
+    today = datetime.now(timezone.utc).date().isoformat()
     body = {d["sales_date"]: d for d in resp.json()["days"]}
     assert body[today]["litres_sold"] == "1300.000"
     assert body[today]["expected_revenue"] == str(Decimal("224000.00") + Decimal("500") * Decimal("280.00"))

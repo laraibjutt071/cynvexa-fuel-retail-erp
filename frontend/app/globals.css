@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 /*
- * CYNVEXA brand tokens - premium dark enterprise SaaS palette (black/blue).
+ * PetroNiq brand tokens - premium dark enterprise SaaS palette (black/blue).
  * Primary blue drives actions and active states; electric blue is reserved
  * for highlights/charts; success/warning/danger are distinct semantic
  * colors, never reused for a primary action. See docs/UX_UPGRADE_PLAN.md.
@@ -374,5 +374,90 @@ textarea {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+}
+
+/*
+ * Hero3D - a genuinely 3D elevation of the existing flat .atom-decor
+ * (which only ever used 2D `rotate()` in the XY plane). This adds real
+ * depth: a CSS `perspective` on the scene, each ring spinning on its own
+ * X/Y axis combination via `rotate3d()` with `translateZ()` offsets, and
+ * `transform-style: preserve-3d` so child rings actually occupy distinct
+ * depth planes instead of being flattened onto the parent's plane. Pure
+ * CSS (no WebGL/three.js) - zero bundle cost, no randomness so SSR/CSR
+ * output matches (no hydration mismatch), and the page-wide
+ * prefers-reduced-motion override above already neutralizes all of this
+ * to a single still (abstract-shape) frame for users who ask for it, so
+ * no separate reduced-motion rule is needed here.
+ */
+.hero3d-scene {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  perspective: 900px;
+  pointer-events: none;
+}
+.hero3d-rig {
+  position: absolute;
+  top: 50%;
+  right: 8%;
+  width: 280px;
+  height: 280px;
+  transform-style: preserve-3d;
+  transform: translate(50%, -50%);
+  opacity: 0.55;
+}
+.hero3d-core {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 20px;
+  height: 20px;
+  margin: -10px 0 0 -10px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #fff, var(--color-accent) 55%, var(--color-brand-600) 100%);
+  box-shadow: 0 0 24px 6px rgba(56, 189, 248, 0.45);
+  animation: cynvexa-nucleus-pulse 2.6s ease-in-out infinite;
+  transform: translateZ(0px);
+}
+.hero3d-ring {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: var(--ring-size, 220px);
+  height: var(--ring-size, 220px);
+  margin: calc(var(--ring-size, 220px) / -2) 0 0 calc(var(--ring-size, 220px) / -2);
+  border-radius: 50%;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  transform-style: preserve-3d;
+  animation: hero3d-spin var(--ring-speed, 16s) linear infinite;
+  animation-direction: var(--ring-direction, normal);
+}
+.hero3d-ring::after {
+  content: "";
+  position: absolute;
+  top: -4px;
+  left: 50%;
+  width: 8px;
+  height: 8px;
+  margin-left: -4px;
+  border-radius: 50%;
+  background: var(--color-brand-400);
+  box-shadow: 0 0 12px 3px rgba(59, 130, 246, 0.65);
+}
+.hero3d-ring--accent::after {
+  background: var(--color-accent);
+  box-shadow: 0 0 12px 3px rgba(56, 189, 248, 0.65);
+}
+@keyframes hero3d-spin {
+  from { transform: rotate3d(var(--ring-axis-x, 1), var(--ring-axis-y, 1), 0, 0deg) translateZ(var(--ring-depth, 0px)); }
+  to { transform: rotate3d(var(--ring-axis-x, 1), var(--ring-axis-y, 1), 0, 360deg) translateZ(var(--ring-depth, 0px)); }
+}
+@media (max-width: 640px) {
+  /* A dense 3D rig fighting for space with real numbers on a phone-width
+   * dashboard is exactly the "gimmick, not premium" failure mode - hide
+   * it below the sm breakpoint rather than shrink it into illegibility. */
+  .hero3d-scene {
+    display: none;
   }
 }

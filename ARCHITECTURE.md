@@ -31,7 +31,7 @@ This project started from an empty directory. There is no prior codebase to pres
 │   ├── ASSUMPTIONS.md
 │   └── blueprint/
 │       └── CYNVEXA_Fuel_Retail_Petrol_Pump_ERP_Discovery_Product_Blueprint.docx
-├── docker-compose.yml
+├── docker-compose.yml   
 ├── backend/
 │   ├── app/
 │   │   ├── main.py                 # FastAPI app factory, middleware, routers, exception handlers

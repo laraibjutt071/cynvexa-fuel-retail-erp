@@ -10,6 +10,7 @@ import { Card } from "@/components/Card";
 import { Button } from "@/components/ui/Button";
 import { AccessDenied } from "@/components/ui/AccessDenied";
 import { DataTable } from "@/components/ui/DataTable";
+import { HardwareIntegrationCard } from "@/components/dashboard/HardwareIntegrationCard";
 import type { AttendanceRecord, OrgUser } from "@/lib/types";
 
 type AuthFetch = ReturnType<typeof useAuth>["authFetch"];
@@ -23,6 +24,7 @@ export default function AttendancePage() {
   const { can, loading: permissionsLoading } = usePermissions(orgId, stationId);
   const canRead = can(["attendance:read", "attendance:record"]);
   const canRecord = can("attendance:record");
+  const canConfigureHardware = can("station:update");
 
   useEffect(() => {
     if (!loading && !user) router.replace("/login");
@@ -56,13 +58,25 @@ export default function AttendancePage() {
           </Link>
           <h1 className="text-lg font-semibold text-ink">Attendance</h1>
           <p className="mt-1 text-sm text-ink-soft">
-            Record who was present, absent, late, or on leave each day. Entered manually - biometric integration is
-            planned for a future release. Payroll rules are configured separately and are not part of this screen yet.
+            Record who was present, absent, late, or on leave each day - entered manually, or automatically once a
+            biometric device is connected below. Payroll rules are configured separately and are not part of this
+            screen yet.
           </p>
         </div>
       </header>
 
       <div className="mx-auto max-w-5xl space-y-6 px-6 py-8">
+        {canConfigureHardware && (
+          <HardwareIntegrationCard
+            orgId={orgId}
+            stationId={stationId}
+            authFetch={authFetch}
+            allowedTypes={["biometric_attendance"]}
+            title="Biometric Attendance Device"
+            description="Connect a fingerprint or face-scan device so check-in/check-out are recorded automatically instead of typed in."
+            idlePrompt='Attendance here is currently entered manually below. Click "Start Hardware Connection" to connect a biometric device, step by step.'
+          />
+        )}
         <AttendanceSection orgId={orgId} stationId={stationId} authFetch={authFetch} canRecord={canRecord} />
       </div>
     </div>

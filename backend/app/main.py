@@ -13,10 +13,14 @@ from app.api import (
     credit_collections,
     credit_customers,
     dispensers,
+    ev_chargers,
+    ev_charging_sessions,
+    ev_tariffs,
     expense_categories,
     expenses,
     fuel_grades,
     fuel_prices,
+    hardware_devices,
     health,
     invitations,
     inventory_items,
@@ -57,7 +61,7 @@ access_logger = logging.getLogger("cynvexa.access")
 
 def create_app() -> FastAPI:
     app = FastAPI(
-        title="CYNVEXA Fuel Retail ERP API",
+        title="PetroNiq Fuel Retail ERP API",
         version="0.1.0",
         docs_url=None if settings.is_production else "/docs",
         redoc_url=None if settings.is_production else "/redoc",
@@ -170,6 +174,10 @@ def create_app() -> FastAPI:
     app.include_router(org_reports.router)
     app.include_router(expense_categories.router)
     app.include_router(shift_templates.router)
+    app.include_router(hardware_devices.router)
+    app.include_router(ev_chargers.router)
+    app.include_router(ev_tariffs.router)
+    app.include_router(ev_charging_sessions.router)
     app.include_router(attendance.attendance_router)
     app.include_router(attendance.payroll_router)
     app.include_router(platform.router)

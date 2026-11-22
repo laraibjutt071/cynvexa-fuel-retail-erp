@@ -12,6 +12,7 @@ import { AccessDenied } from "@/components/ui/AccessDenied";
 import { Badge } from "@/components/ui/Badge";
 import { DataTable } from "@/components/ui/DataTable";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { HardwareIntegrationCard } from "@/components/dashboard/HardwareIntegrationCard";
 import { Sliders } from "lucide-react";
 import type { Station, ShiftTemplate, FuelGrade, Tank, Dispenser, Nozzle } from "@/lib/types";
 
@@ -64,6 +65,7 @@ export default function StationSettingsPage() {
         )}
         {can("station:update") && <ShiftTemplatesCard orgId={orgId} stationId={stationId} authFetch={authFetch} />}
         {can("station:update") && <StationTolerancesCard orgId={orgId} stationId={stationId} authFetch={authFetch} />}
+        {can("station:update") && <HardwareIntegrationCard orgId={orgId} stationId={stationId} authFetch={authFetch} />}
       </div>
     </div>
   );

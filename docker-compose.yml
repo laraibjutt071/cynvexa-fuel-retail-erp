@@ -16,6 +16,20 @@ services:
       timeout: 5s
       retries: 10
 
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # Pure cache, not a source of truth (see backend/app/core/cache.py) - no
+    # volume, no persistence. Losing it on restart just means a few cold
+    # cache misses, never lost or stale real data.
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   backend:
     build:
       context: ./backend
@@ -31,6 +45,11 @@ services:
       # never touches this variable. See
       # docs/TEST_DATABASE_ISOLATION_REPORT.md.
       TEST_DATABASE_URL: postgresql+asyncpg://cynvexa:cynvexa@db:5432/cynvexa_test
+      # Deliberately NOT gated on redis being healthy below (see
+      # depends_on) - app/core/cache.py treats an unreachable Redis as
+      # "caching off", so the backend must be able to start and serve
+      # requests whether or not redis is up.
+      REDIS_URL: redis://redis:6379/0
     ports:
       - "8000:8000"
     volumes:
@@ -42,6 +61,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_started
 
   frontend:
     build:

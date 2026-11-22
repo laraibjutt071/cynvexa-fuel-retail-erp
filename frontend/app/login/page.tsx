@@ -91,7 +91,7 @@ export default function LoginPage() {
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-brand-400 to-brand-600 shadow-lg shadow-brand-500/30">
             <Fuel className="h-5 w-5 text-white" />
           </div>
-          <span className="text-lg font-bold tracking-tight text-ink">CYNVEXA</span>
+          <span className="text-lg font-bold tracking-tight text-ink">PetroNiq</span>
         </div>
 
         <div className="relative z-10 max-w-md">
@@ -172,7 +172,7 @@ export default function LoginPage() {
             <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-brand-400 to-brand-600 shadow-lg shadow-brand-500/30">
               <Fuel className="h-6 w-6 text-white" />
             </div>
-            <h1 className="mt-4 text-2xl font-bold text-ink">CYNVEXA</h1>
+            <h1 className="mt-4 text-2xl font-bold text-ink">PetroNiq</h1>
             <p className="mt-1 text-sm text-ink-soft">{t("login.subtitle")}</p>
           </div>
 
@@ -300,7 +300,7 @@ export default function LoginPage() {
             </Link>
           </p>
 
-          <footer className="mt-8 text-center text-xs text-ink-faint">CYNVEXA Fuel Retail ERP</footer>
+          <footer className="mt-8 text-center text-xs text-ink-faint">PetroNiq Fuel Retail ERP</footer>
         </div>
       </section>
     </main>

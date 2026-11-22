@@ -1,11 +1,13 @@
 "use client";
 
-import { AlertTriangle, Receipt, Truck, Clock, UserCheck } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { AlertTriangle, Receipt, Truck, Clock } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import { useParams } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { useLanguage } from "@/lib/i18n/context";
 import { stationDateIso } from "@/lib/date";
+import { formatLitres, formatMoney, formatNumber } from "@/lib/format";
 import { Card } from "@/components/Card";
 import { LitresByGradeChart } from "@/components/charts/LitresByGradeChart";
 import { type PaymentMethodSlice } from "@/components/charts/PaymentMethodBreakdownChart";
@@ -30,6 +32,14 @@ import type {
   Tank,
   TankerReceipt,
 } from "@/lib/types";
+
+// Lazy, client-only: this is a purely decorative hero accent, never part
+// of the critical path for a page whose job is showing real financial
+// numbers. Deferring it keeps it out of the initial bundle/SSR payload
+// and means a failure here can never block the data this page exists to
+// show (see components/decor/Hero3D.tsx for the depth/reduced-motion
+// reasoning).
+const Hero3D = dynamic(() => import("@/components/decor/Hero3D").then((m) => m.Hero3D), { ssr: false });
 
 export default function TodayOverviewPage() {
   const { orgId, stationId } = useParams<{ orgId: string; stationId: string }>();
@@ -63,64 +73,74 @@ export default function TodayOverviewPage() {
   const [openShifts, setOpenShifts] = useState<Shift[] | null>(null);
   const [attendanceToday, setAttendanceToday] = useState<AttendanceRecord[] | null>(null);
 
-  const load = useCallback(async () => {
+  // Each request updates its own piece of state as soon as IT resolves,
+  // rather than all 11 being gated behind one shared `await Promise.all` -
+  // that previous shape meant every stat card sat on "Loading..." until
+  // the single slowest endpoint answered, even when ten of the eleven
+  // had already come back instantly. Still fired in parallel (the browser
+  // issues all eleven requests at once either way); only the "wait for
+  // the slowest one before showing anything" gate is removed.
+  const load = useCallback(() => {
     const stationBase = `/organizations/${orgId}/stations/${stationId}`;
-    const [
-      salesResp,
-      reconResp,
-      pendingResp,
-      tanksResp,
-      creditResp,
-      gradesResp,
-      pricesResp,
-      methodsResp,
-      receiptsResp,
-      shiftsResp,
-      attendanceResp,
-    ] = await Promise.all([
-      authFetch(`${stationBase}/reports/daily-fuel-sales?date_from=${date}&date_to=${date}`),
-      authFetch(`${stationBase}/reports/shift-reconciliation?date_from=${date}&date_to=${date}`),
-      authFetch(`/organizations/${orgId}/reports/pending-approvals`),
-      authFetch(`${stationBase}/tanks`),
-      authFetch(`/organizations/${orgId}/credit-customers/balances`),
-      authFetch(`/organizations/${orgId}/fuel-grades`),
-      authFetch(`${stationBase}/fuel-prices`),
-      authFetch(`/organizations/${orgId}/payment-methods`),
-      authFetch(`${stationBase}/tanker-receipts`),
-      authFetch(`${stationBase}/shifts?status=open`),
-      authFetch(`${stationBase}/attendance?date_from=${date}&date_to=${date}`),
-    ]);
+
+    authFetch(`${stationBase}/reports/daily-fuel-sales?date_from=${date}&date_to=${date}`).then(async (resp) => {
+      if (!resp.ok) return;
+      const days: DailyFuelSalesDay[] = await resp.json();
+      setSales(days[0] ?? null);
+    });
+
+    authFetch(`${stationBase}/reports/shift-reconciliation?date_from=${date}&date_to=${date}`).then(async (resp) => {
+      if (!resp.ok) return;
+      const rows: ShiftReconciliationReportRow[] = await resp.json();
+      setRecon(rows);
+      // Today's shift(s) tenders, for the payment-method breakdown - the
+      // reconciliation report rows already give us which shift(s) count as
+      // "today," so this reuses that instead of guessing a shift id.
+      const tenderLists = await Promise.all(
+        rows.map((r) => authFetch(`${stationBase}/shifts/${r.shift_id}/tenders`).then((r2) => (r2.ok ? r2.json() : [])))
+      );
+      setTodaysTenders(tenderLists.flat());
+    });
+
+    authFetch(`/organizations/${orgId}/reports/pending-approvals`).then(async (resp) => {
+      if (resp.ok) setPending(await resp.json());
+    });
+
+    authFetch(`${stationBase}/tanks`).then(async (resp) => {
+      if (resp.ok) setTanks(await resp.json());
+    });
+
+    authFetch(`/organizations/${orgId}/credit-customers/balances`).then(async (resp) => {
+      if (resp.ok) setCredit(await resp.json());
+    });
+
+    authFetch(`/organizations/${orgId}/fuel-grades`).then(async (resp) => {
+      if (resp.ok) setFuelGrades(await resp.json());
+    });
+
+    authFetch(`${stationBase}/fuel-prices`).then(async (resp) => {
+      if (resp.ok) setFuelPrices(await resp.json());
+    });
+
+    authFetch(`/organizations/${orgId}/payment-methods`).then(async (resp) => {
+      if (resp.ok) setPaymentMethods(await resp.json());
+    });
+
+    authFetch(`${stationBase}/tanker-receipts`).then(async (resp) => {
+      if (!resp.ok) return;
+      const receipts: TankerReceipt[] = await resp.json();
+      setLastReceipt(receipts[0] ?? null);
+    });
+
+    authFetch(`${stationBase}/shifts?status=open`).then(async (resp) => {
+      setOpenShifts(resp.ok ? await resp.json() : null);
+    });
+
     // Attendance is a permission (attendance:read) not every role holds -
     // a 403 here just means "don't show this widget," never an error.
-    setAttendanceToday(attendanceResp.ok ? await attendanceResp.json() : null);
-    setOpenShifts(shiftsResp.ok ? await shiftsResp.json() : null);
-    if (salesResp.ok) {
-      const days: DailyFuelSalesDay[] = await salesResp.json();
-      setSales(days[0] ?? null);
-    }
-    let reconRows: ShiftReconciliationReportRow[] = [];
-    if (reconResp.ok) {
-      reconRows = await reconResp.json();
-      setRecon(reconRows);
-    }
-    if (pendingResp.ok) setPending(await pendingResp.json());
-    if (tanksResp.ok) setTanks(await tanksResp.json());
-    if (creditResp.ok) setCredit(await creditResp.json());
-    if (gradesResp.ok) setFuelGrades(await gradesResp.json());
-    if (pricesResp.ok) setFuelPrices(await pricesResp.json());
-    if (methodsResp.ok) setPaymentMethods(await methodsResp.json());
-    if (receiptsResp.ok) {
-      const receipts: TankerReceipt[] = await receiptsResp.json();
-      setLastReceipt(receipts[0] ?? null);
-    }
-
-    // Today's shift(s) tenders, for the payment-method breakdown - the
-    // reconciliation report rows already give us which shift(s) count as
-    // "today," so this reuses that instead of guessing a shift id.
-    const tenderLists = await Promise.all(
-      reconRows.map((r) => authFetch(`${stationBase}/shifts/${r.shift_id}/tenders`).then((r2) => (r2.ok ? r2.json() : [])))
-    );
-    setTodaysTenders(tenderLists.flat());
+    authFetch(`${stationBase}/attendance?date_from=${date}&date_to=${date}`).then(async (resp) => {
+      setAttendanceToday(resp.ok ? await resp.json() : null);
+    });
   }, [authFetch, orgId, stationId, date]);
 
   useEffect(() => {
@@ -141,6 +161,15 @@ export default function TodayOverviewPage() {
   }, [load, isViewingToday]);
 
   const [history, setHistory] = useState<LiveTrendPoint[]>([]);
+  // The trend chart needs 2 real points before it can draw a line, and
+  // the second one otherwise only arrives on the next 30s poll - leaving
+  // a freshly opened dashboard stuck on "Collecting live data..." for up
+  // to 30s for no good reason. This fires ONE extra real fetch a few
+  // seconds after the very first point lands, purely to get the second
+  // genuine measurement sooner; normal 30s-interval polling continues
+  // unchanged afterward. Never fabricates a point - it's still a real
+  // `load()` call, just not waiting out the full interval for it.
+  const didBoosterFetch = useRef(false);
 
   const totalLitres = sales?.total_litres_sold ?? "0.000";
   const totalSalesValue = sales?.total_expected_revenue ?? "0.00";
@@ -202,30 +231,45 @@ export default function TodayOverviewPage() {
     : [];
   const actionQueueRows: ActionQueueRow[] = moduleHealthItems.map((m) => ({ module: m.label, count: m.count, href: m.href }));
 
-  // Appends one point each time today's real sales/reconciliation data
-  // actually loads (initial load + every 30s poll above) - a genuine
-  // live trend of this session's own refreshes, never a simulated tick.
+  // Appends one point each time today's real reconciliation data actually
+  // loads (initial load + every 30s poll above) - a genuine live trend of
+  // this session's own refreshes, never a simulated tick. Gated on `recon`
+  // alone, not `sales` too: the daily-fuel-sales report legitimately
+  // returns [] (so `sales` stays null) on any day with zero approved
+  // shifts so far - a brand-new station, or simply before today's first
+  // shift closes - and gating on both meant the chart sat on "Collecting
+  // live data..." forever on such a day even though totalCollected/
+  // totalLitres below already default to zero correctly. `recon` only
+  // stays null while a request has never yet succeeded, so it's the right
+  // "has this page loaded at least once" signal.
   useEffect(() => {
-    if (!sales || !recon) return;
+    if (!recon) return;
     const point: LiveTrendPoint = {
       time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
       collected: totalCollected,
       litres: Number(totalLitres),
     };
     setHistory((prev) => [...prev.slice(-19), point]);
+
+    if (!didBoosterFetch.current && isViewingToday) {
+      didBoosterFetch.current = true;
+      const boosterId = setTimeout(load, 4000);
+      return () => clearTimeout(boosterId);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sales, recon]);
 
   return (
     <div className="mx-auto max-w-6xl space-y-6 px-4 py-6 sm:px-6 sm:py-8">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
+      <div className="relative flex flex-wrap items-start justify-between gap-4 overflow-hidden">
+        <Hero3D />
+        <div className="relative z-10">
           <h1 className="text-xl font-semibold text-ink">
             {t("today.welcome")}, {user?.full_name?.split(" ")[0] ?? "there"}
           </h1>
           <p className="mt-1 text-sm text-ink-soft">{t("today.subtitle")}</p>
         </div>
-        <label className="flex items-center gap-2 text-sm">
+        <label className="relative z-10 flex items-center gap-2 text-sm">
           <span className="font-medium text-ink-soft">{t("today.date")}</span>
           <input
             type="date"
@@ -259,15 +303,19 @@ export default function TodayOverviewPage() {
       <LiveTrendChart data={history} />
       <KpiStrip
         items={[
-          { label: t("today.fuelSoldToday"), value: sales ? `${totalLitres} L` : null },
-          { label: t("today.salesValue"), value: sales ? totalSalesValue : null },
-          { label: t("today.collected"), value: recon ? totalCollected.toFixed(2) : null },
-          { label: t("today.expectedCash"), value: recon ? expectedCash.toFixed(2) : null },
-          { label: t("today.actualCash"), value: recon ? actualCash.toFixed(2) : null },
-          { label: t("today.shortageExcess"), value: recon ? shortageExcess.toFixed(2) : null },
-          { label: t("today.outstandingCredit"), value: credit ? outstandingCredit.toFixed(2) : null },
-          { label: t("today.transactions"), value: recon ? String(transactionsCount) : null },
-          { label: t("today.avgTransaction"), value: recon ? avgTransaction.toFixed(2) : null },
+          { label: t("today.fuelSoldToday"), value: sales ? formatLitres(totalLitres) : null },
+          { label: t("today.salesValue"), value: sales ? `PKR ${formatMoney(totalSalesValue)}` : null },
+          { label: t("today.collected"), value: recon ? `PKR ${formatMoney(totalCollected)}` : null },
+          { label: t("today.expectedCash"), value: recon ? `PKR ${formatMoney(expectedCash)}` : null },
+          { label: t("today.actualCash"), value: recon ? `PKR ${formatMoney(actualCash)}` : null },
+          {
+            label: t("today.shortageExcess"),
+            value: recon ? `PKR ${formatMoney(Math.abs(shortageExcess))}` : null,
+            sublabel: recon ? (shortageExcess < 0 ? "Shortage" : shortageExcess > 0 ? "Excess" : "Balanced") : undefined,
+          },
+          { label: t("today.outstandingCredit"), value: credit ? `PKR ${formatMoney(outstandingCredit)}` : null },
+          { label: t("today.transactions"), value: recon ? formatNumber(transactionsCount) : null },
+          { label: t("today.avgTransaction"), value: recon ? `PKR ${formatMoney(avgTransaction)}` : null },
         ]}
       />
 
@@ -332,7 +380,7 @@ export default function TodayOverviewPage() {
                 <li key={tx.id} className="flex items-center justify-between py-2 text-sm">
                   <span className="text-ink">{methodById.get(tx.payment_method_id)?.name ?? "Payment"}</span>
                   <span className="flex items-baseline gap-2">
-                    <span className="font-medium tabular-nums text-ink">{Number(tx.amount).toFixed(2)}</span>
+                    <span className="font-medium tabular-nums text-ink">PKR {formatMoney(tx.amount)}</span>
                     <span className="text-xs text-ink-faint">{new Date(tx.recorded_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
                   </span>
                 </li>
@@ -366,7 +414,10 @@ export default function TodayOverviewPage() {
                     <span className="text-sm text-ink">{grade.name}</span>
                     {price ? (
                       <span className="text-sm font-semibold text-ink">
-                        {price.price_per_litre} <span className="font-normal text-ink-faint">{t("today.perLitre")}</span>
+                        {/* Not formatMoney(): that rounds to 2dp, but price_per_litre is stored
+                            to 4dp (NUMERIC(10,4)) - rounding a per-litre price here would silently
+                            hide the precision the backend deliberately keeps. */}
+                        PKR {price.price_per_litre} <span className="font-normal text-ink-faint">{t("today.perLitre")}</span>
                       </span>
                     ) : (
                       <span className="text-sm text-ink-faint">—</span>
@@ -387,7 +438,7 @@ export default function TodayOverviewPage() {
               <div>
                 <p className="text-sm text-ink">
                   {gradeNameById.get(lastReceipt.fuel_grade_id) ?? "—"} ·{" "}
-                  {lastReceipt.accepted_quantity ?? lastReceipt.dispatched_quantity ?? lastReceipt.invoice_quantity ?? "—"} L
+                  {formatLitres(lastReceipt.accepted_quantity ?? lastReceipt.dispatched_quantity ?? lastReceipt.invoice_quantity ?? null)}
                 </p>
                 <p className="mt-0.5 text-xs text-ink-faint">
                   {new Date(lastReceipt.created_at).toLocaleString()} · {lastReceipt.status.replace(/_/g, " ")}

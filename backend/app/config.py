@@ -39,6 +39,11 @@ class Settings(BaseSettings):
 
     cors_allowed_origins: str = "http://localhost:3000"
 
+    # Optional. Unset (None) is a fully supported configuration - app/core/cache.py
+    # treats a missing/unreachable Redis as "caching off", never as an error, so
+    # local dev and the pytest suite run fine without a Redis instance at all.
+    redis_url: str | None = None
+
     @model_validator(mode="after")
     def _reject_weak_production_jwt_secret(self) -> "Settings":
         # jwt_secret_key being required (no default) already makes the app

@@ -577,6 +577,29 @@ export interface Nozzle {
   updated_at: string;
 }
 
+export type HardwareDeviceType = "dispenser_controller" | "forecourt_controller" | "atg" | "existing_pos" | "biometric_attendance";
+export type HardwareConnectionType = "tcp_ip" | "serial";
+export type HardwareDeviceStatus = "draft" | "testing" | "connected" | "failed";
+
+export interface HardwareDevice {
+  id: string;
+  station_id: string;
+  device_type: HardwareDeviceType;
+  label: string;
+  brand: string | null;
+  model: string | null;
+  serial_number: string | null;
+  connection_type: HardwareConnectionType;
+  ip_address: string | null;
+  port: number | null;
+  com_port: string | null;
+  status: HardwareDeviceStatus;
+  last_test_message: string | null;
+  created_by_user_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export type MeterEventType = "replacement" | "reset" | "rollover";
 
 export interface MeterEventRow {
@@ -919,6 +942,82 @@ export interface SalaryRecord {
   notes: string | null;
   generated_by_user_id: string;
   is_finalized: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export type EVChargerType = "ac" | "dc";
+export type EVPortStatus = "available" | "occupied" | "charging" | "out_of_service" | "faulted" | "offline";
+export type EVPricingBasis = "per_kwh" | "time_based" | "session_fee";
+export type EVSessionStatus =
+  | "initiated"
+  | "charging"
+  | "completed"
+  | "interrupted"
+  | "failed"
+  | "cancelled"
+  | "refunded";
+
+export interface EVCharger {
+  id: string;
+  station_id: string;
+  code: string;
+  label: string;
+  manufacturer: string | null;
+  model: string | null;
+  serial_number: string | null;
+  charger_type: EVChargerType;
+  rated_power_kw: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EVChargerPort {
+  id: string;
+  charger_id: string;
+  port_code: string;
+  connector_standard: string;
+  rated_power_kw: string | null;
+  status: EVPortStatus;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EVTariff {
+  id: string;
+  station_id: string;
+  charger_id: string | null;
+  pricing_basis: EVPricingBasis;
+  rate: string;
+  effective_from: string;
+  effective_to: string | null;
+  created_by_user_id: string | null;
+  created_at: string;
+}
+
+export interface EVChargingSession {
+  id: string;
+  port_id: string;
+  tariff_id: string;
+  session_reference: string | null;
+  status: EVSessionStatus;
+  start_time: string;
+  end_time: string | null;
+  start_meter_kwh: string;
+  end_meter_kwh: string | null;
+  delivered_kwh: string | null;
+  gross_amount: string | null;
+  payment_method_id: string | null;
+  credit_customer_id: string | null;
+  vehicle_reference: string | null;
+  fault_reason: string | null;
+  notes: string | null;
+  created_by_user_id: string;
+  reversed_by_user_id: string | null;
+  reversed_at: string | null;
+  reversal_reason: string | null;
   created_at: string;
   updated_at: string;
 }

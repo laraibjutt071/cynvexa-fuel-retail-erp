@@ -37,7 +37,7 @@ async def get_my_subscription(
     )
     sub = (await db.execute(stmt)).scalar_one_or_none()
     if sub is None:
-        raise NotFoundError("This organization has no subscription yet - contact CYNVEXA to set one up.")
+        raise NotFoundError("This organization has no subscription yet - contact PetroNiq to set one up.")
     return sub
 
 
@@ -51,7 +51,7 @@ async def list_my_subscription_payments(
         await db.execute(select(Subscription).where(Subscription.organization_id == organization_id))
     ).scalar_one_or_none()
     if sub is None:
-        raise NotFoundError("This organization has no subscription yet - contact CYNVEXA to set one up.")
+        raise NotFoundError("This organization has no subscription yet - contact PetroNiq to set one up.")
 
     result = await db.execute(
         select(SubscriptionPayment)

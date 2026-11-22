@@ -14,6 +14,7 @@ import { ReconciliationHistoryChart } from "@/components/charts/ReconciliationHi
 import { RevenueDonut } from "@/components/charts/RevenueDonut";
 import { InventoryLevelsChart } from "@/components/charts/InventoryLevelsChart";
 import { KpiStrip } from "@/components/dashboard/KpiStrip";
+import { formatMoney, formatNumber } from "@/lib/format";
 import type {
   DailyFuelSalesDay,
   InventoryItemWithStock,
@@ -193,12 +194,12 @@ function DailyFuelSalesTab({
             title="Sales snapshot"
             badge="live"
             items={[
-              { label: "Total litres sold", value: `${totalLitresAll.toLocaleString()} L` },
-              { label: "Total expected revenue", value: totalRevenueAll.toFixed(2) },
-              { label: "Total tender received", value: totalTenderAll.toFixed(2) },
-              { label: "Approved shifts", value: String(totalShifts) },
-              { label: "Days in range", value: String(dayCount) },
-              { label: "Avg litres / day", value: avgLitresPerDay.toFixed(0) },
+              { label: "Total litres sold", value: `${formatNumber(totalLitresAll)} L` },
+              { label: "Total expected revenue", value: `PKR ${formatMoney(totalRevenueAll)}` },
+              { label: "Total tender received", value: `PKR ${formatMoney(totalTenderAll)}` },
+              { label: "Approved shifts", value: formatNumber(totalShifts) },
+              { label: "Days in range", value: formatNumber(dayCount) },
+              { label: "Avg litres / day", value: `${formatNumber(Math.round(avgLitresPerDay))} L` },
             ]}
           />
           <RevenueDonut
@@ -395,11 +396,15 @@ function ReconciliationTab({
           title="Reconciliation snapshot"
           badge="live"
           items={[
-            { label: "Shifts in range", value: String(rows.length) },
-            { label: "Expected revenue", value: totalExpected.toFixed(2) },
-            { label: "Tender received", value: totalTender.toFixed(2) },
-            { label: "Shortage / excess", value: totalShortageExcess.toFixed(2) },
-            { label: "Needs authorization", value: String(needsAuthCount) },
+            { label: "Shifts in range", value: formatNumber(rows.length) },
+            { label: "Expected revenue", value: `PKR ${formatMoney(totalExpected)}` },
+            { label: "Tender received", value: `PKR ${formatMoney(totalTender)}` },
+            {
+              label: "Shortage / excess",
+              value: `PKR ${formatMoney(Math.abs(totalShortageExcess))}`,
+              sublabel: totalShortageExcess < 0 ? "Shortage" : totalShortageExcess > 0 ? "Excess" : "Balanced",
+            },
+            { label: "Needs authorization", value: formatNumber(needsAuthCount) },
           ]}
         />
       )}

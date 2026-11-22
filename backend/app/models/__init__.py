@@ -53,6 +53,15 @@ from app.models.subscription import BillingCycle, Subscription, SubscriptionStat
 from app.models.subscription_payment import SubscriptionPayment, SubscriptionPaymentStatus
 from app.models.invitation import Invitation
 from app.models.support_session import SupportSession
+from app.models.hardware_device import (
+    HardwareConnectionType,
+    HardwareDevice,
+    HardwareDeviceStatus,
+    HardwareDeviceType,
+)
+from app.models.ev_charger import ChargerType, EVCharger, EVChargerPort, PortStatus
+from app.models.ev_tariff import EVPricingBasis, EVTariff
+from app.models.ev_charging_session import EVChargingSession, EVSessionStatus
 
 __all__ = [
     "Organization",
@@ -124,4 +133,16 @@ __all__ = [
     "ShiftTemplate",
     "Invitation",
     "SupportSession",
+    "HardwareDevice",
+    "HardwareDeviceType",
+    "HardwareConnectionType",
+    "HardwareDeviceStatus",
+    "ChargerType",
+    "EVCharger",
+    "EVChargerPort",
+    "PortStatus",
+    "EVPricingBasis",
+    "EVTariff",
+    "EVChargingSession",
+    "EVSessionStatus",
 ]

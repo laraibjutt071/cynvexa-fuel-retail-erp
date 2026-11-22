@@ -18,3 +18,8 @@ greenlet==3.1.1
 # rather than silently falling back to UTC on whichever host happens to
 # lack it. Pure data, no code - negligible dependency-risk surface.
 tzdata==2026.6
+# Optional cache layer (app/core/cache.py) - read-heavy, non-financial
+# config lists only (roles, fuel grades, payment methods, expense
+# categories, shift templates). The app runs fine with REDIS_URL unset;
+# this client is only ever touched if it's configured.
+redis==5.2.1

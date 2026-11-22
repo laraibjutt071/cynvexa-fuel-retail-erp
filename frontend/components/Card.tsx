@@ -12,10 +12,10 @@ export function Card({
   children: ReactNode;
 }) {
   return (
-    <section className="card-glow rounded-xl bg-surface p-6">
+    <section className="card-glow animate-fade-slide-up rounded-xl bg-surface p-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-base font-semibold text-ink">{title}</h2>
+          <h2 className="text-base font-semibold tracking-tight text-ink">{title}</h2>
           {description && <p className="mt-1 text-sm text-ink-soft">{description}</p>}
         </div>
         {action}

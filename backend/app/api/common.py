@@ -7,6 +7,8 @@ from app.exceptions import NotFoundError, ValidationFailedError
 from app.models.credit_customer import CreditCustomer
 from app.models.credit_customer_payment import CreditCustomerPayment
 from app.models.dispenser import Dispenser
+from app.models.ev_charger import EVCharger, EVChargerPort
+from app.models.ev_tariff import EVTariff
 from app.models.expense import Expense
 from app.models.fuel_grade import FuelGrade
 from app.models.inventory_item import InventoryItem
@@ -221,6 +223,48 @@ async def get_expense_or_404(
     if expense is None:
         raise NotFoundError("Expense not found.")
     return expense
+
+
+async def get_ev_charger_or_404(
+    db: AsyncSession, station_id: uuid.UUID, charger_id: uuid.UUID, *, for_update: bool = False
+) -> EVCharger:
+    stmt = select(EVCharger).where(EVCharger.id == charger_id, EVCharger.station_id == station_id)
+    if for_update:
+        stmt = stmt.with_for_update()
+    charger = (await db.execute(stmt)).scalar_one_or_none()
+    if charger is None:
+        raise ValidationFailedError("EV charger does not belong to this station.")
+    return charger
+
+
+async def get_ev_charger_port_in_station_or_404(
+    db: AsyncSession, station_id: uuid.UUID, port_id: uuid.UUID, *, for_update: bool = False
+) -> EVChargerPort:
+    """Port has no direct station_id column - it belongs to a station through its charger."""
+    stmt = (
+        select(EVChargerPort)
+        .join(EVCharger, EVCharger.id == EVChargerPort.charger_id)
+        .where(EVChargerPort.id == port_id, EVCharger.station_id == station_id)
+    )
+    if for_update:
+        stmt = stmt.with_for_update()
+    port = (await db.execute(stmt)).scalar_one_or_none()
+    if port is None:
+        raise ValidationFailedError("EV charger port does not belong to this station.")
+    return port
+
+
+async def get_ev_tariff_or_404(
+    db: AsyncSession, station_id: uuid.UUID, tariff_id: uuid.UUID
+) -> EVTariff:
+    tariff = (
+        await db.execute(
+            select(EVTariff).where(EVTariff.id == tariff_id, EVTariff.station_id == station_id)
+        )
+    ).scalar_one_or_none()
+    if tariff is None:
+        raise ValidationFailedError("EV tariff does not belong to this station.")
+    return tariff
 
 
 async def get_inventory_item_or_404(

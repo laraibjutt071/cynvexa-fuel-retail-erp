@@ -13,6 +13,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { AccessDenied } from "@/components/ui/AccessDenied";
 import { StatusBadge } from "@/components/ui/Badge";
 import type { Supplier, Tank, TankerReceipt } from "@/lib/types";
+import { formatLitres } from "@/lib/format";
 
 export default function PurchasesPage() {
   const { orgId, stationId } = useParams<{ orgId: string; stationId: string }>();
@@ -190,7 +191,7 @@ export default function PurchasesPage() {
                       {r.tanker_registration} <span className="text-ink-faint">· {tankByid.get(r.tank_id)?.code ?? r.tank_id}</span>
                     </p>
                     <p className="text-xs text-ink-faint">
-                      {supplierById.get(r.supplier_id)?.name ?? "Supplier"} · Invoiced {r.invoice_quantity ?? "—"} L
+                      {supplierById.get(r.supplier_id)?.name ?? "Supplier"} · Invoiced {formatLitres(r.invoice_quantity)}
                     </p>
                   </div>
                   <StatusBadge status={r.status} />
@@ -219,7 +220,7 @@ export default function PurchasesPage() {
                 {r.status === "awaiting_approval" && canApprove && (
                   <div className="mt-3 flex flex-wrap items-center gap-2">
                     <p className="text-xs text-ink-soft">
-                      Tank gained {r.tank_gain_quantity ?? "—"} L. Confirm the accepted quantity to approve.
+                      Tank gained {formatLitres(r.tank_gain_quantity)}. Confirm the accepted quantity to approve.
                     </p>
                     <TextInput
                       type="number"
@@ -240,7 +241,7 @@ export default function PurchasesPage() {
 
                 {r.status === "approved" && (
                   <p className="mt-2 text-xs text-ink-soft">
-                    Accepted {r.accepted_quantity} L · Payable basis: {r.payable_quantity_basis}
+                    Accepted {formatLitres(r.accepted_quantity)} · Payable basis: {r.payable_quantity_basis}
                   </p>
                 )}
               </div>

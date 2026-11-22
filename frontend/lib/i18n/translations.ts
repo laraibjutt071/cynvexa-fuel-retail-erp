@@ -25,6 +25,7 @@ export const translations = {
   "nav.cashBank": { en: "Cash & Bank", ur: "Cash aur Bank" },
   "nav.creditSales": { en: "Credit Sales", ur: "Udhar Sale" },
   "nav.purchases": { en: "Purchases", ur: "Kharidari" },
+  "nav.evCharging": { en: "EV Charging", ur: "EV Charging" },
   "nav.suppliers": { en: "Suppliers", ur: "Suppliers" },
   "nav.reconciliation": { en: "Reconciliation", ur: "Hisaab Milan" },
   "nav.reports": { en: "Reports", ur: "Reports" },
@@ -58,7 +59,7 @@ export const translations = {
   "common.language": { en: "Language", ur: "Zaban" },
 
   // Login
-  "login.title": { en: "CYNVEXA Fuel Retail ERP", ur: "CYNVEXA Fuel Retail ERP" },
+  "login.title": { en: "PetroNiq Fuel Retail ERP", ur: "PetroNiq Fuel Retail ERP" },
   "login.subtitle": { en: "Sign in to continue.", ur: "Jaari rakhne ke liye sign in karein." },
   "login.email": { en: "Email", ur: "Email" },
   "login.password": { en: "Password", ur: "Password" },
@@ -68,8 +69,8 @@ export const translations = {
   "login.welcomeBack": { en: "Welcome back", ur: "Khush Amdeed" },
   "login.heroTitle": { en: "Run every pump, tank, and shift with confidence.", ur: "Har pump, tank aur shift ka hisaab aasani se rakhein." },
   "login.heroSubtitle": {
-    en: "CYNVEXA brings real-time reconciliation, credit tracking, and compliance-ready reports to one dashboard built for fuel retailers.",
-    ur: "CYNVEXA aik hi dashboard mein real-time hisaab milan, udhar tracking, aur reports la kar fuel retailers ki madad karta hai.",
+    en: "PetroNiq brings real-time reconciliation, credit tracking, and compliance-ready reports to one dashboard built for fuel retailers.",
+    ur: "PetroNiq aik hi dashboard mein real-time hisaab milan, udhar tracking, aur reports la kar fuel retailers ki madad karta hai.",
   },
   "login.feature.reconciliation": { en: "Shift-level reconciliation", ur: "Shift-wise Hisaab Milan" },
   "login.feature.credit": { en: "Credit customer ledgers", ur: "Udhar Customer Ledger" },
@@ -88,7 +89,7 @@ export const translations = {
   "login.passwordPlaceholder": { en: "Enter your password", ur: "Password Likhein" },
 
   // Registration
-  "register.title": { en: "Set up your station on CYNVEXA", ur: "CYNVEXA par Apna Station Set Up Karein" },
+  "register.title": { en: "Set up your station on PetroNiq", ur: "PetroNiq par Apna Station Set Up Karein" },
   "register.subtitle": { en: "Start a 14-day free trial - no card required.", ur: "14 din ka free trial shuru karein - koi card nahi chahiye." },
   "register.companyName": { en: "Company name", ur: "Company ka Naam" },
   "register.stationName": { en: "First station name", ur: "Pehle Station ka Naam" },

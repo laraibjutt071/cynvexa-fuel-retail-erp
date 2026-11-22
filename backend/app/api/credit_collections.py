@@ -183,7 +183,7 @@ async def get_credit_customer_statement(
                 ShiftTender.credit_customer_id == credit_customer_id,
                 ShiftTender.reversed_at.is_(None),
             )
-            .order_by(ShiftTender.created_at)
+            .order_by(ShiftTender.recorded_at)
         )
     ).scalars().all()
 
@@ -200,7 +200,7 @@ async def get_credit_customer_statement(
 
     events: list[tuple[date, str, Decimal, Decimal]] = []
     for s in sales:
-        sale_date = s.created_at.date()
+        sale_date = s.recorded_at.date()
         if start_date <= sale_date <= end_date:
             events.append((sale_date, f"Credit sale (ref: {s.reference or 'N/A'})", s.amount, Decimal(0)))
     for p in payments:
@@ -211,7 +211,7 @@ async def get_credit_customer_statement(
 
     opening_balance = Decimal(0)
     for s in sales:
-        if s.created_at.date() < start_date:
+        if s.recorded_at.date() < start_date:
             opening_balance += s.amount
     for p in payments:
         if p.payment_date < start_date:
@@ -251,7 +251,7 @@ async def list_credit_customer_ageing(
         )
     ).scalars().all()
 
-    today = date.today()
+    today = datetime.now(timezone.utc).date()
     result = []
 
     for customer in customers:
@@ -285,7 +285,7 @@ async def list_credit_customer_ageing(
         }
 
         remaining_paid = paid
-        sorted_tenders = sorted(tenders, key=lambda t: t.created_at)
+        sorted_tenders = sorted(tenders, key=lambda t: t.recorded_at)
 
         for tender in sorted_tenders:
             if remaining_paid >= tender.amount:
@@ -294,7 +294,7 @@ async def list_credit_customer_ageing(
             unpaid = tender.amount - remaining_paid
             remaining_paid = Decimal(0)
 
-            age = (today - tender.created_at.date()).days
+            age = (today - tender.recorded_at.date()).days
             if age <= 30:
                 buckets["current"] += unpaid
             elif age <= 60:

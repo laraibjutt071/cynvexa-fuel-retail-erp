@@ -134,7 +134,7 @@ export default function DashboardPage() {
       <header className="border-b border-border bg-surface px-6 py-4">
         <div className="mx-auto flex max-w-5xl items-center justify-between">
           <div>
-            <h1 className="text-lg font-semibold text-ink">CYNVEXA Fuel Retail ERP</h1>
+            <h1 className="text-lg font-semibold text-ink">PetroNiq Fuel Retail ERP</h1>
             <p className="text-sm text-ink-soft">
               {user.full_name} &middot; {user.email}
               {user.is_superuser && " · Platform Admin"}

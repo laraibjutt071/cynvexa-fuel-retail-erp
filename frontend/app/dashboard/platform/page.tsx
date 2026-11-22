@@ -36,7 +36,7 @@ export default function PlatformOverviewPage() {
     <div className="mx-auto max-w-6xl space-y-6 px-4 py-6 sm:px-6 sm:py-8">
       <div>
         <h1 className="text-xl font-semibold text-ink">Platform overview</h1>
-        <p className="mt-1 text-sm text-ink-soft">Every petrol pump organization on CYNVEXA, at a glance.</p>
+        <p className="mt-1 text-sm text-ink-soft">Every petrol pump organization on PetroNiq, at a glance.</p>
       </div>
 
       {stats && (
