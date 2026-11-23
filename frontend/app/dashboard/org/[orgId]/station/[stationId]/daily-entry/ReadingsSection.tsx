@@ -1,6 +1,7 @@
 "use client";
 
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, Fuel } from "lucide-react";
+import Link from "next/link";
 import { formatLitres } from "@/lib/format";
 import { useCallback, useEffect, useState } from "react";
 import { useLanguage } from "@/lib/i18n/context";
@@ -9,6 +10,7 @@ import { Card } from "@/components/Card";
 import { Button } from "@/components/ui/Button";
 import { Select, TextInput } from "@/components/ui/Field";
 import { ConfirmDialog } from "@/components/ui/Dialog";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { usePermissions } from "@/lib/permissions";
 import type { NozzleOverview, Shift, ShiftNozzleReading, ShiftTankReading, Tank } from "@/lib/types";
 import type { AuthFetch } from "./page";
@@ -170,6 +172,28 @@ export function ReadingsSection({
   const tankReadingByTank = (tankId: string, type: "opening" | "closing") =>
     tankReadings.find((r) => r.tank_id === tankId && r.reading_type === type);
   const nozzleReadingByNozzle = (nozzleId: string) => nozzleReadings.find((r) => r.nozzle_id === nozzleId);
+
+  // A brand-new station (just onboarded, no tanks/dispensers/nozzles
+  // configured yet) has nothing for this section to show readings for -
+  // without this, the tank-stock table below silently renders with a
+  // header row and zero data rows, which looks like a broken page rather
+  // than "set up your station first."
+  if (tanks !== null && tanks.length === 0) {
+    return (
+      <Card title={t("readings.tankStock")}>
+        <EmptyState
+          icon={Fuel}
+          title="No tanks set up yet"
+          description="Before readings can be recorded, this station needs at least one fuel grade, tank, dispenser and nozzle configured."
+          action={
+            <Link href={`/dashboard/org/${orgId}/station/${stationId}/settings`}>
+              <Button>Set up tanks &amp; dispensers</Button>
+            </Link>
+          }
+        />
+      </Card>
+    );
+  }
 
   return (
     <div className="space-y-6">
