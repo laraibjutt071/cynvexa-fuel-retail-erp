@@ -37,6 +37,13 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (!loading && !user) router.replace("/login");
+    // A superuser has no UserStationRole of their own (is_superuser bypasses
+    // that check entirely - see app/api/deps.py::require_permission), so
+    // orgCards below would otherwise always be empty for them and this page
+    // would show nothing but the "Create organization" box. Their real
+    // dashboard - every organization, platform-wide stats and activity -
+    // lives at /dashboard/platform.
+    if (!loading && user?.is_superuser) router.replace("/dashboard/platform");
   }, [loading, user, router]);
 
   const loadData = useCallback(async () => {
