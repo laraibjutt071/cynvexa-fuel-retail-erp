@@ -9,6 +9,7 @@ import { useToast } from "@/components/ui/Toast";
 import { Card } from "@/components/Card";
 import { Button } from "@/components/ui/Button";
 import { Field, TextInput } from "@/components/ui/Field";
+import { TankDipChartPanel } from "@/components/dashboard/TankDipChartPanel";
 import { formatLitres } from "@/lib/format";
 import type { FuelGrade, Tank } from "@/lib/types";
 
@@ -164,6 +165,14 @@ export default function TankManagementPage() {
                       Edit details
                     </Button>
                   )}
+
+                  <TankDipChartPanel
+                    orgId={orgId}
+                    stationId={stationId}
+                    tankId={tank.id}
+                    authFetch={authFetch}
+                    canManage={canManage}
+                  />
 
                   {editing === tank.id && (
                     <div className="mt-3 space-y-3 border-t border-border pt-3">

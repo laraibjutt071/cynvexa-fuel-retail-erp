@@ -655,6 +655,21 @@ export interface Tank {
   safe_capacity_available: string;
 }
 
+export interface TankDipChartEntry {
+  id: string;
+  tank_id: string;
+  dip_mm: string;
+  volume_litres: string;
+  created_by_user_id: string | null;
+  created_at: string;
+}
+
+export interface TankDipChartLookupResult {
+  dip_mm: string;
+  volume_litres: string;
+  exact_match: boolean;
+}
+
 export interface FuelGrade {
   id: string;
   organization_id: string;

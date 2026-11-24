@@ -486,6 +486,9 @@ function InventoryTab({
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [form, setForm] = useState({ inventory_item_id: "", movement_type: "receipt", quantity: "", amount: "", reason: "" });
+  const [itemForm, setItemForm] = useState({ sku: "", name: "", unit: "pcs", reorder_level: "0" });
+  const [itemError, setItemError] = useState<string | null>(null);
+  const [creatingItem, setCreatingItem] = useState(false);
 
   const load = useCallback(async () => {
     const resp = await authFetch(`/organizations/${orgId}/stations/${stationId}/inventory-items`);
@@ -536,6 +539,33 @@ function InventoryTab({
 
   const lowStockCount = items?.filter((it) => it.below_reorder_level).length ?? 0;
 
+  async function submitNewItem(e: React.FormEvent) {
+    e.preventDefault();
+    if (creatingItem) return;
+    setCreatingItem(true);
+    setItemError(null);
+    try {
+      const resp = await authFetch(`/organizations/${orgId}/stations/${stationId}/inventory-items`, {
+        method: "POST",
+        body: JSON.stringify({
+          sku: itemForm.sku,
+          name: itemForm.name,
+          unit: itemForm.unit,
+          reorder_level: itemForm.reorder_level || "0",
+        }),
+      });
+      if (!resp.ok) {
+        const body = await resp.json().catch(() => ({ detail: "Could not create this item." }));
+        setItemError(body.detail ?? "Could not create this item.");
+        return;
+      }
+      setItemForm({ sku: "", name: "", unit: "pcs", reorder_level: "0" });
+      await load();
+    } finally {
+      setCreatingItem(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
       {items && items.length > 0 && (
@@ -550,12 +580,69 @@ function InventoryTab({
         />
       )}
       {items && items.length > 0 && <InventoryLevelsChart items={items} title="On-hand stock by item" />}
+
+      {canManage && (
+        <Card title="Add a lubricant / shop item" description="Create a new catalogue entry - motor oil, grease, filters, or any other shop item this station stocks.">
+          <form onSubmit={submitNewItem} className="flex flex-wrap items-end gap-3">
+            <label className="text-sm text-ink-soft">
+              SKU
+              <input
+                required
+                value={itemForm.sku}
+                onChange={(e) => setItemForm({ ...itemForm, sku: e.target.value })}
+                placeholder="e.g. OIL-5W30-1L"
+                className="ml-2 w-36 rounded-md border border-border px-2 py-1.5 text-sm"
+              />
+            </label>
+            <label className="text-sm text-ink-soft">
+              Name
+              <input
+                required
+                value={itemForm.name}
+                onChange={(e) => setItemForm({ ...itemForm, name: e.target.value })}
+                placeholder="e.g. Engine Oil 5W-30 1L"
+                className="ml-2 w-48 rounded-md border border-border px-2 py-1.5 text-sm"
+              />
+            </label>
+            <label className="text-sm text-ink-soft">
+              Unit
+              <input
+                required
+                value={itemForm.unit}
+                onChange={(e) => setItemForm({ ...itemForm, unit: e.target.value })}
+                placeholder="pcs, litres, kg…"
+                className="ml-2 w-24 rounded-md border border-border px-2 py-1.5 text-sm"
+              />
+            </label>
+            <label className="text-sm text-ink-soft">
+              Reorder level
+              <input
+                type="number"
+                step="0.001"
+                min="0"
+                value={itemForm.reorder_level}
+                onChange={(e) => setItemForm({ ...itemForm, reorder_level: e.target.value })}
+                className="ml-2 w-28 rounded-md border border-border px-2 py-1.5 text-sm"
+              />
+            </label>
+            <button
+              type="submit"
+              disabled={creatingItem}
+              className="rounded-md bg-brand-500 px-4 py-1.5 text-sm font-medium text-white hover:bg-brand-600 disabled:opacity-50"
+            >
+              {creatingItem ? "Adding…" : "Add item"}
+            </button>
+          </form>
+          {itemError && <p className="mt-2 text-sm text-danger-600">{itemError}</p>}
+        </Card>
+      )}
+
       <Card title="On-hand stock" description="Always derived from the movement ledger, never hand-edited.">
         {!items ? (
           <p className="text-sm text-ink-soft">Loading…</p>
         ) : items.length === 0 ? (
           <p className="text-sm text-ink-soft">
-            No inventory items yet{canManage ? " - add one via the API to get started." : "."}
+            {canManage ? "No inventory items yet - add one above to get started." : "No inventory items yet."}
           </p>
         ) : (
           <table className="w-full text-sm">

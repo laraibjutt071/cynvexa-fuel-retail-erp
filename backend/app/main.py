@@ -45,6 +45,7 @@ from app.api import (
     support_sessions,
     supplier_ledger,
     suppliers,
+    tank_dip_charts,
     tanker_receipts,
     tanks,
     users,
@@ -149,6 +150,7 @@ def create_app() -> FastAPI:
     app.include_router(supplier_ledger.balances_router)
     app.include_router(suppliers.router)
     app.include_router(tanks.router)
+    app.include_router(tank_dip_charts.router)
     app.include_router(dispensers.router)
     app.include_router(nozzles.router)
     app.include_router(nozzle_overview.router)

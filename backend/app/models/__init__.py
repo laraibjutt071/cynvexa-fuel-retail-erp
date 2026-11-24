@@ -8,6 +8,7 @@ from app.models.refresh_token import RefreshToken
 from app.models.fuel_grade import FuelGrade
 from app.models.supplier import Supplier
 from app.models.tank import Tank
+from app.models.tank_dip_chart import TankDipChartEntry
 from app.models.dispenser import Dispenser
 from app.models.nozzle import Nozzle
 from app.models.fuel_price import FuelPrice
@@ -76,6 +77,7 @@ __all__ = [
     "FuelGrade",
     "Supplier",
     "Tank",
+    "TankDipChartEntry",
     "Dispenser",
     "Nozzle",
     "FuelPrice",
