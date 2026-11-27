@@ -486,7 +486,15 @@ function InventoryTab({
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [form, setForm] = useState({ inventory_item_id: "", movement_type: "receipt", quantity: "", amount: "", reason: "" });
-  const [itemForm, setItemForm] = useState({ sku: "", name: "", unit: "pcs", reorder_level: "0" });
+  const [itemForm, setItemForm] = useState({
+    sku: "",
+    name: "",
+    category: "other",
+    unit: "pcs",
+    reorder_level: "0",
+    unit_cost: "",
+    selling_price: "",
+  });
   const [itemError, setItemError] = useState<string | null>(null);
   const [creatingItem, setCreatingItem] = useState(false);
 
@@ -550,8 +558,11 @@ function InventoryTab({
         body: JSON.stringify({
           sku: itemForm.sku,
           name: itemForm.name,
+          category: itemForm.category,
           unit: itemForm.unit,
           reorder_level: itemForm.reorder_level || "0",
+          unit_cost: itemForm.unit_cost || "0",
+          selling_price: itemForm.selling_price || "0",
         }),
       });
       if (!resp.ok) {
@@ -559,7 +570,7 @@ function InventoryTab({
         setItemError(body.detail ?? "Could not create this item.");
         return;
       }
-      setItemForm({ sku: "", name: "", unit: "pcs", reorder_level: "0" });
+      setItemForm({ sku: "", name: "", category: "other", unit: "pcs", reorder_level: "0", unit_cost: "", selling_price: "" });
       await load();
     } finally {
       setCreatingItem(false);
@@ -576,6 +587,7 @@ function InventoryTab({
             { label: "Items tracked", value: String(items.length) },
             { label: "Below reorder level", value: String(lowStockCount) },
             { label: "Recent movements", value: movements ? String(movements.length) : null },
+            { label: "Total stock value", value: `PKR ${formatMoney(items.reduce((sum, it) => sum + Number(it.stock_value), 0))}` },
           ]}
         />
       )}
@@ -605,6 +617,20 @@ function InventoryTab({
               />
             </label>
             <label className="text-sm text-ink-soft">
+              Category
+              <select
+                value={itemForm.category}
+                onChange={(e) => setItemForm({ ...itemForm, category: e.target.value })}
+                className="ml-2 rounded-md border border-border px-2 py-1.5 text-sm"
+              >
+                <option value="lubricant">Lubricant</option>
+                <option value="filter">Filter</option>
+                <option value="battery">Battery</option>
+                <option value="accessory">Accessory</option>
+                <option value="other">Other</option>
+              </select>
+            </label>
+            <label className="text-sm text-ink-soft">
               Unit
               <input
                 required
@@ -622,6 +648,30 @@ function InventoryTab({
                 min="0"
                 value={itemForm.reorder_level}
                 onChange={(e) => setItemForm({ ...itemForm, reorder_level: e.target.value })}
+                className="ml-2 w-28 rounded-md border border-border px-2 py-1.5 text-sm"
+              />
+            </label>
+            <label className="text-sm text-ink-soft">
+              Unit cost (PKR)
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={itemForm.unit_cost}
+                onChange={(e) => setItemForm({ ...itemForm, unit_cost: e.target.value })}
+                placeholder="0.00"
+                className="ml-2 w-28 rounded-md border border-border px-2 py-1.5 text-sm"
+              />
+            </label>
+            <label className="text-sm text-ink-soft">
+              Selling price (PKR)
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={itemForm.selling_price}
+                onChange={(e) => setItemForm({ ...itemForm, selling_price: e.target.value })}
+                placeholder="0.00"
                 className="ml-2 w-28 rounded-md border border-border px-2 py-1.5 text-sm"
               />
             </label>
@@ -650,8 +700,11 @@ function InventoryTab({
               <tr className="border-b border-border text-left text-ink-soft">
                 <th className="py-2 pr-2">SKU</th>
                 <th className="py-2 pr-2">Name</th>
+                <th className="py-2 pr-2">Category</th>
                 <th className="py-2 pr-2">On hand</th>
                 <th className="py-2 pr-2">Reorder level</th>
+                <th className="py-2 pr-2">Unit cost</th>
+                <th className="py-2 pr-2">Stock value</th>
                 <th className="py-2 pr-2">Status</th>
               </tr>
             </thead>
@@ -660,10 +713,13 @@ function InventoryTab({
                 <tr key={it.id} className="border-b border-border">
                   <td className="py-2 pr-2 text-ink">{it.sku}</td>
                   <td className="py-2 pr-2 text-ink">{it.name}</td>
+                  <td className="py-2 pr-2 text-ink-soft capitalize">{it.category}</td>
                   <td className="py-2 pr-2 text-ink">
                     {it.on_hand} {it.unit}
                   </td>
                   <td className="py-2 pr-2 text-ink">{it.reorder_level}</td>
+                  <td className="py-2 pr-2 text-ink">PKR {formatMoney(it.unit_cost)}</td>
+                  <td className="py-2 pr-2 text-ink">PKR {formatMoney(it.stock_value)}</td>
                   <td className="py-2 pr-2">
                     {it.below_reorder_level ? (
                       <span className="font-medium text-warning-600">Low stock</span>

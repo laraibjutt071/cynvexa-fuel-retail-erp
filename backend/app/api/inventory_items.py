@@ -1,4 +1,5 @@
 import uuid
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy import select
@@ -73,6 +74,7 @@ async def list_inventory_items(
                 **InventoryItemRead.model_validate(item).model_dump(),
                 on_hand=on_hand,
                 below_reorder_level=on_hand < item.reorder_level,
+                stock_value=(on_hand * item.unit_cost).quantize(Decimal("0.01")),
             )
         )
     return out

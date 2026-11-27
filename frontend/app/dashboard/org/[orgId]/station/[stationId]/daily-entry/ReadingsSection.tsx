@@ -200,6 +200,14 @@ export function ReadingsSection({
       <Card
         title={t("readings.tankStock")}
         description="Opening stock carries forward automatically from the last approved closing stock - nothing to re-enter, and it is never silently overwritten. Closing dip is what you physically measure at the end of the day."
+        action={
+          <Link
+            href={`/dashboard/org/${orgId}/station/${stationId}/tanks`}
+            className="text-xs font-medium text-brand-500 hover:underline"
+          >
+            Convert a stick reading (dip chart) →
+          </Link>
+        }
       >
         {!tanks ? (
           <p className="text-sm text-ink-soft">{t("common.loading")}</p>

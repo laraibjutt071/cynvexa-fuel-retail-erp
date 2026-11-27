@@ -10,14 +10,20 @@ from app.models.inventory_movement import InventoryMovementType
 class InventoryItemCreate(BaseModel):
     sku: str = Field(min_length=1, max_length=50)
     name: str = Field(min_length=1, max_length=200)
+    category: str = Field(default="other", max_length=50)
     unit: str = Field(min_length=1, max_length=20)
     reorder_level: Decimal = Field(default=Decimal("0"), ge=0, decimal_places=3)
+    unit_cost: Decimal = Field(default=Decimal("0.00"), ge=0, decimal_places=2)
+    selling_price: Decimal = Field(default=Decimal("0.00"), ge=0, decimal_places=2)
 
 
 class InventoryItemUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=200)
+    category: str | None = Field(default=None, max_length=50)
     unit: str | None = Field(default=None, min_length=1, max_length=20)
     reorder_level: Decimal | None = Field(default=None, ge=0, decimal_places=3)
+    unit_cost: Decimal | None = Field(default=None, ge=0, decimal_places=2)
+    selling_price: Decimal | None = Field(default=None, ge=0, decimal_places=2)
     is_active: bool | None = None
 
 
@@ -27,8 +33,11 @@ class InventoryItemRead(BaseModel):
     station_id: uuid.UUID
     sku: str
     name: str
+    category: str
     unit: str
     reorder_level: Decimal
+    unit_cost: Decimal
+    selling_price: Decimal
     is_active: bool
     created_at: datetime
     updated_at: datetime
@@ -39,6 +48,10 @@ class InventoryItemRead(BaseModel):
 class InventoryItemWithStockRead(InventoryItemRead):
     on_hand: Decimal
     below_reorder_level: bool
+    # on_hand * unit_cost, quantized to 2dp - the catalogue's own reference
+    # cost, never a movement's actual recorded amount (see InventoryItem's
+    # own docstring on unit_cost/selling_price).
+    stock_value: Decimal
 
 
 class InventoryMovementCreate(BaseModel):

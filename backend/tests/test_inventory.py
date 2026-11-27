@@ -98,6 +98,61 @@ async def test_below_reorder_level_flag(client: AsyncClient, owner_user, org, st
     assert row["below_reorder_level"] is True
 
 
+async def test_stock_value_is_on_hand_times_unit_cost(client: AsyncClient, owner_user, org, station):
+    token = await login(client, "owner@acmefuel-dev.com")
+    created = await client.post(
+        _items_base(org, station),
+        json={
+            "sku": "OIL-5W30-1L",
+            "name": "Engine Oil 5W-30 1L",
+            "category": "lubricant",
+            "unit": "bottle",
+            "reorder_level": "5",
+            "unit_cost": "850.00",
+            "selling_price": "1100.00",
+        },
+        headers=auth_headers(token),
+    )
+    assert created.status_code == 201, created.text
+    item_id = created.json()["id"]
+    assert created.json()["category"] == "lubricant"
+
+    mbase = _movements_base(org, station)
+    await client.post(
+        mbase,
+        json={"inventory_item_id": item_id, "movement_type": "receipt", "quantity": "20", "amount": "17000.00"},
+        headers=auth_headers(token),
+    )
+    await client.post(
+        mbase,
+        json={"inventory_item_id": item_id, "movement_type": "sale", "quantity": "3", "amount": "3300.00"},
+        headers=auth_headers(token),
+    )
+
+    listing = await client.get(_items_base(org, station), headers=auth_headers(token))
+    row = next(r for r in listing.json() if r["id"] == item_id)
+    assert row["on_hand"] == "17.000"
+    # 17.000 on hand * 850.00 unit cost = 14450.00 - the catalogue's
+    # reference cost, never a movement's own recorded amount.
+    assert row["stock_value"] == "14450.00"
+
+
+async def test_new_item_without_category_or_pricing_defaults_safely(
+    client: AsyncClient, owner_user, org, station
+):
+    token = await login(client, "owner@acmefuel-dev.com")
+    resp = await client.post(
+        _items_base(org, station),
+        json={"sku": "SHOP-MISC-01", "name": "Misc shop item", "unit": "pcs"},
+        headers=auth_headers(token),
+    )
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    assert body["category"] == "other"
+    assert body["unit_cost"] == "0.00"
+    assert body["selling_price"] == "0.00"
+
+
 async def test_duplicate_sku_at_same_station_is_rejected(client: AsyncClient, owner_user, org, station, inventory_item):
     token = await login(client, "owner@acmefuel-dev.com")
     resp = await client.post(

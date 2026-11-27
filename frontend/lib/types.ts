@@ -420,11 +420,15 @@ export interface InventoryItemWithStock {
   station_id: string;
   sku: string;
   name: string;
+  category: string;
   unit: string;
   reorder_level: string;
+  unit_cost: string;
+  selling_price: string;
   is_active: boolean;
   on_hand: string;
   below_reorder_level: boolean;
+  stock_value: string;
 }
 
 export interface InventoryMovement {
