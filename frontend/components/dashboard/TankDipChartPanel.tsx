@@ -98,18 +98,15 @@ export function TankDipChartPanel({
 
   if (!open) {
     return (
-      <button
-        onClick={() => setOpen(true)}
-        className="mt-3 flex items-center gap-1.5 text-xs font-medium text-brand-500 hover:underline"
-      >
+      <Button size="sm" variant="secondary" onClick={() => setOpen(true)}>
         <Ruler className="h-3.5 w-3.5" aria-hidden />
         Dip chart (calibration table)
-      </button>
+      </Button>
     );
   }
 
   return (
-    <div className="mt-3 space-y-4 border-t border-border pt-3">
+    <div className="mt-3 w-full space-y-4 border-t border-border pt-3">
       <div className="flex items-center justify-between">
         <p className="flex items-center gap-1.5 text-xs font-semibold text-ink">
           <Ruler className="h-3.5 w-3.5" aria-hidden />

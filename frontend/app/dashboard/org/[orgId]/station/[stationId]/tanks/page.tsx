@@ -155,24 +155,24 @@ export default function TankManagementPage() {
                     </div>
                   </div>
 
-                  {canManage && editing !== tank.id && (
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      className="mt-3"
-                      onClick={() => startEdit(tank)}
-                    >
-                      Edit details
-                    </Button>
-                  )}
-
-                  <TankDipChartPanel
-                    orgId={orgId}
-                    stationId={stationId}
-                    tankId={tank.id}
-                    authFetch={authFetch}
-                    canManage={canManage}
-                  />
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    {canManage && editing !== tank.id && (
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => startEdit(tank)}
+                      >
+                        Edit details
+                      </Button>
+                    )}
+                    <TankDipChartPanel
+                      orgId={orgId}
+                      stationId={stationId}
+                      tankId={tank.id}
+                      authFetch={authFetch}
+                      canManage={canManage}
+                    />
+                  </div>
 
                   {editing === tank.id && (
                     <div className="mt-3 space-y-3 border-t border-border pt-3">
